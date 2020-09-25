@@ -1,0 +1,21 @@
+---
+title: "mixOmics: DIABLO"
+author: "Mar Garcia-Aloy"
+output: html_document
+---
+
+En este documento voy a intentar reproducir el ejemplo que se incluye en la descripción de la herramienta "DIABLO" del paquete "mixOmics" (https://mixomicsteam.github.io/Bookdown/diablo.html). Las siglas significan análisis de integración de datos para el descubrimiento de biomarcadores usando un componente latente (del inglés “Data Integration Analysis for Biomarker discovery using a Latent cOmponents). Los autores definen DIABLO como un algoritmo que extiende el PLS para la integración de múltiples conjuntos de datos. 
+  
+En este ejemplo se quiere identificar un huella multiómica altamente correlacionada que discrimine grupos conocidos de muestras. 
+
+# Preliminaries
+
+```{r preliminaries}
+library(mixOmics) # load the package
+```
+
+
+# Run the method
+# Graphical representation of the samples
+# Graphical representation of the variables
+
