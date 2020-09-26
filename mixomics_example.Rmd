@@ -6,7 +6,19 @@ output: html_document
 
 En este documento voy a intentar reproducir el ejemplo que se incluye en la descripción de la herramienta "DIABLO" del paquete "mixOmics" (https://mixomicsteam.github.io/Bookdown/diablo.html). Las siglas significan análisis de integración de datos para el descubrimiento de biomarcadores usando un componente latente (del inglés “Data Integration Analysis for Biomarker discovery using a Latent cOmponents). Los autores definen DIABLO como un algoritmo que extiende el PLS para la integración de múltiples conjuntos de datos. 
   
-En este ejemplo se quiere identificar un huella multiómica altamente correlacionada que discrimine grupos conocidos de muestras. 
+En este ejemplo se quiere identificar un huella multiómica altamente correlacionada que discrimine grupos conocidos de muestras.   
+Las muestras utilizadas pertenecen al "The Cancer Genome Atlas Network".   
+Los datos que se van a usar ya han sido normalizados y filtrados.  
+Las muestras se han dividido en 2 grupos: "training set" (n=150 muestras con datos de mRNA, miRNA i proteómica) y "test set" (n=70 muestras, SIN datos de proteómica, es decir, sólo con datos de mRNA y miRNA).   
+El objetivo de este análisis de integración de datos ómicos es identificar una huella multiómica altamente correlacionada que discrimine los distintos subtipos de cáncer de mama "Basal", "Her2" y "LumA".  
+El `breast.TCGA` es una lista que contiene los grupos "traning" (`data.train`) y "test" (`data.test`). Ambos incluyen los siguientes datos:  
+  
+  * `miRNA`: un *data.frame* con 150 (70) filas y 184 columnas para el grupo "training" ("test") con los niveles de expresión de miRNA.  
+  * `mRNA`: un *data.frame* con 150 (70) filas y 520 columnas para el grupo "training" ("test") con los niveles de expresión de mRNA.  
+  * `protein`: un *data.frame* con 150 filas y 142 columnas solo para el grupo "training" con las abundancias de las proteínas.  
+  * `subtype`: un *factor* indicando los subtipos de cáncer de mama en el grupo "training" (longitud de 150) y "test" (longitud 70).  
+    
+Para ejemplificar el DIABLO, se va a proceder con la integración de los niveles de expresión de miRNA, mRNA y la abundancia de proteínas mientras se intenta discriminar entre los subtipos de cáncer de mama con las muestras del grupo "training", para luego predecir los subtipos en las muestras del grupo "test".
 
 # Preliminaries
 
