@@ -6,6 +6,9 @@ output: html_document
 
 En este documento voy a intentar reproducir el ejemplo que se incluye en la descripción de la herramienta "DIABLO" del paquete "mixOmics" (https://mixomicsteam.github.io/Bookdown/diablo.html). Las siglas significan análisis de integración de datos para el descubrimiento de biomarcadores usando un componente latente (del inglés “Data Integration Analysis for Biomarker discovery using a Latent cOmponents). Los autores definen DIABLO como un algoritmo que extiende el PLS para la integración de múltiples conjuntos de datos. 
   
+
+# Descripción del ejemplo  
+  
 En este ejemplo se quiere identificar un huella multiómica altamente correlacionada que discrimine grupos conocidos de muestras.   
 Las muestras utilizadas pertenecen al "The Cancer Genome Atlas Network".   
 Los datos que se van a usar ya han sido normalizados y filtrados.  
@@ -18,7 +21,26 @@ El `breast.TCGA` es una lista que contiene los grupos "traning" (`data.train`) y
   * `protein`: un *data.frame* con 150 filas y 142 columnas solo para el grupo "training" con las abundancias de las proteínas.  
   * `subtype`: un *factor* indicando los subtipos de cáncer de mama en el grupo "training" (longitud de 150) y "test" (longitud 70).  
     
-Para ejemplificar el DIABLO, se va a proceder con la integración de los niveles de expresión de miRNA, mRNA y la abundancia de proteínas mientras se intenta discriminar entre los subtipos de cáncer de mama con las muestras del grupo "training", para luego predecir los subtipos en las muestras del grupo "test".
+Para ejemplificar el DIABLO, se va a proceder con la integración de los niveles de expresión de miRNA, mRNA y la abundancia de proteínas mientras se intenta discriminar entre los subtipos de cáncer de mama con las muestras del grupo "training", para luego predecir los subtipos en las muestras del grupo "test".  
+
+  
+# Principios del método DIABLO
+
+El método DIABLO se basa en una extensión del Análisis de Correlación Canónica Generalizada (el cual generaliza el PLS para múltiples conjuntos de datos coincidentes) y del método "sparse sGCCA".    
+DIABLO parte del paquete R `RGCCA`, donde se extendiero los métodos que incluía para diferentes tipos de análisis, incluyendo los análisis de N-integración no supervisados y supervisados.  
+  
+El objetivo de la **N-integración** con los métodos "sparse" es identificar variables correlacionadas (o co-expresadas) medidas en conjuntos de datos heterogéneos que también explican el resultado categórico de interés (análisis supervisado). La tarea de integración de datos múltiples no es trivial, ya que el análisis puede verse fuertemente afectado por la variación entre los fabricantes o las plataformas tecnológicas ómicas a pesar de ser medido en las mismas muestras biológicas. Antes de empezar la integración de datos, los autores de DIABLO sugerien encarecidamente que se realicen análisis individuales o en parejas con el sPLS-DA y el PLS para comprender primero las principales fuentes de variación en cada conjunto de datos y para orientar el proceso de integración.  
+  
+    
+DIABLO neceista como entrada una lista `X` de *data.frames* con n filas (el número de muestras) y un número diferente de variaciones en cada *data.frame*.   
+`Y` es un vector factor de longitud n que indica la clase de cada muestra (internamente es recodificado como una matriz *dummy*).   
+  
+Los principales resultados de DIABLO son:  
+  
+  * Un **conjunto de componentes**, también llamados variables latentes, asociadas a cada conjunto de datos. Hay tantos componentes como la dimensión elegida de DIABLO.  
+  * Un **conjunto de vectores *loading* **, que son coeficientes asignados a cada variable para definir cada componente. Estos coeficientes indican la importancia de cada variable en DIABLO. Es importante señalar que cada vector *loading* está asociado a un componente particular. Los vectores *loading* se obtienen de manera que se maximiza la covarianza entre una combinación lineal de las variables de X y de Y.  
+  * Una **lista de variables seleccionadas** de cada conjunto de datos y asociadas a cada componente, en el caso que se aplique el método DIABLO "sparse".  
+
 
 # Preliminaries
 
@@ -28,6 +50,7 @@ library(mixOmics) # load the package
 
 
 # Run the method
+
 # Graphical representation of the samples
 # Graphical representation of the variables
 
