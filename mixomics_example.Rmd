@@ -42,15 +42,110 @@ Los principales resultados de DIABLO son:
   * Una **lista de variables seleccionadas** de cada conjunto de datos y asociadas a cada componente, en el caso que se aplique el método DIABLO "sparse".  
 
 
-# Preliminaries
+# Preliminarios
 
 ```{r preliminaries}
 library(mixOmics) # load the package
 ```
 
 
-# Run the method
+## Preparación de los datos
 
-# Graphical representation of the samples
-# Graphical representation of the variables
+Para empezar se asignan los datos en una lista de *data.frames* `X` y en un factor `Y` que indica a que clase pertenece cada muestra. Cada *data.frame* en `X` debe ser **nombrado de manera consistente** para que coincida con el parámetro `keepX`.
 
+```{r}
+data(breast.TCGA)
+# extract training data and name each data frame
+X <- list(mRNA = breast.TCGA$data.train$mrna, 
+          miRNA = breast.TCGA$data.train$mirna, 
+          protein = breast.TCGA$data.train$protein)
+Y <- breast.TCGA$data.train$subtype
+summary(Y) # check that the dimensions
+
+# set up arbitrarily the number of variables "keepX" that we wish to select in each data set and each component: 
+list.keepX <- list(mRNA = c(16, 17), miRNA = c(18,5), protein = c(5, 5)) 
+```
+
+# Ejecutar el método
+
+Para este ejemplo se realiza la versión "sparse", ya que se quiere identificar una mínima huella multi-ómica.
+
+```{r}
+MyResult.diablo <- block.splsda(
+  X, Y, keepX = list.keepX, 
+  ncomp = 2, scale = TRUE, mode = "regression")
+```
+
+
+# Representación gráfica de las muestras
+
+DIABLO genera un par de componentes, cada uno asociado a cada conjunto de datos. 
+Es por eso que se visualizan 3 gráficos para las muestras.  
+Como DIABLO es un método supervisado, las muestras se representan con diferentes colores dependiendo de su clase conocida.  
+
+```{r}
+plotIndiv(MyResult.diablo, 
+          ind.names = FALSE, legend=TRUE, 
+          cex = c(1,2,3), title = 'BRCA with DIABLO') 
+```
+
+# Representación gráfica de las variables
+
+La gráfica de variables sugiere alguna estructura de correlación entre las proteínas, el mRNA y el miRNA.
+
+```{r}
+plotVar(MyResult.diablo, 
+        var.names = c(FALSE, FALSE, TRUE), 
+        legend = TRUE, pch = c(16,16,1))
+```
+
+
+# Otros gráficos
+
+## `plotDiablo`
+La función `plotDiablo` permite obtener una visión global de la estructura de correlación a nivel de un determinado componente. La función traza los componentes a través de los diferentes conjuntos de datos para la dimensión escogida y los colores indican la clase de cada muestra.
+
+```{r}
+plotDiablo(MyResult.diablo, ncomp = 1)
+```
+
+Aquí se puede observar que DIABLO consigue extraer una fuerte correlación entre los conjuntos de datos de mRNA y proteínas.   
+
+## `circosPlot`
+  
+El gráfico "circos" representa las correlaciones entre variables de diferentes tipos, representadas en los cuadrantes laterales. Son posibles varias opciones de visualización, para mostrar las conexiones intra- e inter-bloques, los niveles de expresión de cada variable según cada clase (con el argumento `line = TRUE`). El gráfico "circos" se construye en base a una matriz de similaridad. Se puede incluir el argumento `cutoff``   para visualizar los coeficientes de correlación por encima de este umbral en la firma multi-ómica.  
+
+```{r}
+circosPlot(MyResult.diablo, cutoff=0.7)
+```
+
+
+## `cimDiablo`
+
+La función `cimDiablo` es un mapa de imágenes agrupadas implementado específicamente para representar la expresión de la huella molecular multiómica de cada muestra. Es muy similar al clásico agrupamiento jerárquico:
+
+```{r, eval=FALSE}
+cimDiablo(MyResult.diablo, 
+          color.blocks = c('darkorchid', 'brown1', 'lightgreen'), 
+          comp = 1, margin = c(8,20), legend.position = "right")
+```
+
+## `plotLoadings`
+
+La función `plotLoadings` permite visualizar los *loading* de cada variable seleccionada en cada componente (`comp = 1`) y en cada conjunto de datos. El color indica la clase en la que la variable tiene el máximo nivel de expresión (`contrib = "max"`) o el mínimo (`contrib = "min"`), en promedio (`method = "mean"`) o utilizando la mediana (`method = "median")`. 
+
+```{r}
+plotLoadings(MyResult.diablo, comp = 2, contrib = "max")
+```
+
+## `network`
+
+Otra visualización de la correlación entre los diferentes tipos de variables es la red de relevancia, que también se construye sobre la matriz de similitud. Cada color representa un tipo de variable. También se puede establecer un umbral utilizando el argumento de corte.
+
+```{r}
+network(MyResult.diablo, blocks = c(1,2,3),
+        color.node = c('darkorchid', 'brown1', 'lightgreen'), 
+        cutoff = 0.6, save = 'jpeg', name.save = 'DIABLOnetwork')
+```
+
+![](/Users/lenovo/Documents/GitHub/UOC_TFM_omicsintegration/DIABLOnetwork.jpeg)
