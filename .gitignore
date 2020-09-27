@@ -1,4 +1,5 @@
 *.html
+*.jpeg
 
 # History files
 .Rhistory
