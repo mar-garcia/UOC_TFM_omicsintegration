@@ -46,6 +46,7 @@ Los principales resultados de DIABLO son:
 
 ```{r preliminaries}
 library(mixOmics) # load the package
+library(knitr)
 ```
 
 
@@ -74,6 +75,81 @@ Para este ejemplo se realiza la versión "sparse", ya que se quiere identificar 
 MyResult.diablo <- block.splsda(
   X, Y, keepX = list.keepX, 
   ncomp = 2, scale = TRUE, mode = "regression")
+```
+
+El número de componentes a retener se especifica en el argumento `ncomp.` 
+La regla general es K-1 donde K es el número de clases, pero vale la pena probar algunos componentes extra.  
+  
+La matriz de diseño `design` indica qué conjuntos o bloques de datos deben conectarse para maximizar la covarianza entre los componentes y en qué medida. Es necesario alcanzar un compromiso entre la maximización de la correlación entre los conjuntos de datos (valor de diseño entre 0,5 y 1) y la maximización de la discriminación con el resultado Y (valor de diseño entre 0 y 0,5).
+
+```{r}
+MyResult.diablo$design
+MyDesign <- matrix(c(0, 0.1, 0.3,
+                     0.1, 0, 0.9,
+                     0.3, 0.9, 0),
+                   byrow=TRUE,
+                   ncol = length(X), nrow = length(X),
+                 dimnames = list(names(X), names(X)))
+MyDesign
+MyResult.diablo.design <- block.splsda(X, Y, keepX=list.keepX, design=MyDesign)
+```
+
+Se recomienda que inicialmente se tenga en cuenta algún conocimiento biológico previo que pueda tener sobre la relación que espera ver entre los conjuntos de datos. Luego se pueden realizar algunas pruebas en una versión "non-sparse" `block.plsda` , mirar el rendimiento de la clasificación con `perf` y `plotDiablo` antes de decidir el diseño final.
+
+
+En el caso que el "tuning step" indique que para un determinado conjunto de datos solo se ha seleccionado 1 variable, se recomienda elegir una cuadrícula de valores `keepX` que comience con un valor más alto (por ejemplo, 5). Lo que sucedió es que el algoritmo encontró un modelo óptimo con 1 sola variable, ya sea porque es altamente discriminatoria o porque los datos son ruidosos, pero esto no justifica que no se puedan hacer otras pruebas intentando seleccionar más variables.  
+
+
+# Evaluación del modelo
+
+## Capacidad de clasificar
+
+Se utiliza la validación cruzada aleatoria con la función `perf` para evaluar la predicción del modelo.
+
+```{r}
+set.seed(123) # for reproducibility in this vignette
+MyPerf.diablo <- perf(MyResult.diablo, validation = 'Mfold', folds = 5, 
+                   nrepeat = 10, 
+                   dist = 'centroids.dist')
+MyPerf.diablo  # lists the different outputs
+
+# Performance with Majority vote
+MyPerf.diablo$MajorityVote.error.rate
+```
+
+En caso que aparezca un error del tipo `system computationally singular`, revisa que el valor "M" de tu "M-fold" no sea demasiado grande en comparación a la "n" (como regla general se usa n/M > 6-8). En caso de no ser posible, se recomienda probar el método "leave-one-out" con `validation = "loo"` i asegurarse que `ncomp` no sea demasiado grande ya que se podrían estar ejecutando matrices vacías.
+
+## AUC
+
+Se traza un gráfico AUC por cada bloque de datos usando la función `auroc`.
+
+```{r}
+Myauc.diablo <- auroc(MyResult.diablo, roc.block = "miRNA", roc.comp = 2)
+```
+
+## Predicción usando un conjunto de muestras externas
+
+La función de `predict`  predice la clase de muestras de un conjunto "test".
+Aunque en el presente ejemplo falta un conjunto de datos en el conjunto "test", el método todavía se puede aplicar. 
+Es necesario asegurarse de que los nombres de los bloques son exactamente iguales.
+
+```{r}
+# prepare test set data: here one block (proteins) is missing
+X.test <- list(mRNA = breast.TCGA$data.test$mrna, 
+                      miRNA = breast.TCGA$data.test$mirna)
+
+Mypredict.diablo <- predict(MyResult.diablo, newdata = X.test)
+# the warning message will inform us that one block is missing
+Mypredict.diablo # list the different outputs
+```
+La tabla de confusión compara los subtipos reales con los subtipos previstos para un modelo de 2 componentes, para la distancia de interés:
+
+```{r}
+confusion.mat <- get.confusion_matrix(
+                truth = breast.TCGA$data.test$subtype, 
+                predicted = Mypredict.diablo$MajorityVote$centroids.dist[,2])
+kable(confusion.mat)
+get.BER(confusion.mat)
 ```
 
 
