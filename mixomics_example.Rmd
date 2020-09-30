@@ -1,7 +1,11 @@
 ---
 title: "mixOmics: DIABLO"
 author: "Mar Garcia-Aloy"
-output: html_document
+output: 
+  BiocStyle::html_document:
+    toc: true
+    number_sections: false
+    toc_float: true
 ---
 
 En este documento voy a intentar reproducir el ejemplo que se incluye en la descripción de la herramienta "DIABLO" del paquete "mixOmics" (https://mixomicsteam.github.io/Bookdown/diablo.html). Las siglas significan análisis de integración de datos para el descubrimiento de biomarcadores usando un componente latente (del inglés “Data Integration Analysis for Biomarker discovery using a Latent cOmponents). Los autores definen DIABLO como un algoritmo que extiende el PLS para la integración de múltiples conjuntos de datos. 
