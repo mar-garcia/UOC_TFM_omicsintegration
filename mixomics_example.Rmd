@@ -205,7 +205,9 @@ ya sea porque es altamente discriminatoria o porque los datos son ruidosos,
 pero esto no justifica que no se puedan hacer otras pruebas intentando seleccionar más variables.  
 
 ```{r keepX}
-test.keepX = list(mrna = seq(10,40,20), mirna = seq(10,30,10), protein = seq(1,10,5))
+test.keepX = list(
+  mrna = seq(10,40,20), mirna = seq(10,30,10), protein = seq(1,10,5))
+set.seed(123)
 tune = tune.block.splsda(
   X = X, Y = Y, ncomp = 2, test.keepX = test.keepX, 
   design = matrix(1, ncol = length(X), nrow = length(X), 
@@ -216,13 +218,19 @@ tune$error.rate
 ```
 
 ¿En base a estos resultados, se tendría que modificar el objeto `list.keepX` de la siguiente forma?  
-`list(mRNA = c(30, 10), miRNA = c(20, 30), protein = c(1, 6))`   
-Es decir, el panel multiómico óptimo consistiría en 30 mRNAs, 20 miRNAs y 1 proteína para el componente 1, y 10 mRNAs, 30 miRNAs, 5 CpGs y 6 proteínas para el componente 2. Es decir, un total de 40 mRNAs, 50 miRNAs y 7 proteínas.  
-   
+`list(mRNA = c(10, 30), miRNA = c(10, 30), protein = c(1, 1))`   
+Es decir, el panel multiómico óptimo consistiría en 10 mRNAs, 10 miRNAs y 1 proteína para el componente 1, y 30 mRNAs, 30 miRNAs, y 1 proteína para el componente 2. Es decir, un total de 40 mRNAs, 40 miRNAs y 2 proteínas.  
+
 De todas formas me surgen las siguientes dudas:  
-  
-  * Según `tune$choice.keepX`, para el primer componente el "keep" óptimo sería 30-10-1 (mrna-mirna-protein), pero viendo `tune$error.rate` interpreto que el "keep" óptimo puede ser qualquiera de las siguientes 3 combinaciones ya que el error rate siempre es igual (0.333): 30-10-1, 30-20-1 y 30-10-6. Interpreto que el algoritmo ha escogido 30-10-1 porqué es la primera combinación con el mínimo "error rate" para el "comp1". ¿Es correcta esta interpretación?  
-  * En un primer momento he escogido la combinación 30-20-1 para el primer componente, porqué de las 3 combinaciones con el mismo "error rate" para el C1 es que el que presenta un menor "error rate" para el C2. De todas formas, me surge la duda de si fuera mejor escoger la combinación 30-10-6 por el hecho de que así no se restringue a 1 sola variable el conjunto de proteínas. ¿Estás de acuerdo que, a igual "error rate" para C1, aunque el menor "error rate" para el C2 fuera 30-20-1 (siempre hablando de C1), sería mejor indicar 30-10-6 por el hecho de no restringuirse ya desde el principio a la selección de 1 sola variable para 1 conjunto de datos?  
+
+* Según `tune$choice.keepX`, para el primer componente el "keep" óptimo sería 10-10-1 (mrna-mirna-protein), pero viendo `tune$error.rate` interpreto que el "keep" óptimo puede ser qualquiera de las siguientes combinaciones ya que el error rate siempre es igual (0.333): 10-10-1, 30-10-1, 10-20-1, 30-20-1, 10-30-1, 30-30-1, 10-10-6, 30-10-6, 30-20-6 o 30-30-6. Interpreto que el algoritmo ha escogido 10-10-1 porqué es la primera combinación con el mínimo "error rate" para el "comp1". ¿Es correcta esta interpretación?  
+* Como veo que para todas estas combinaciones con el minimo "error rate" en C1 existen distintos "error rate" para C2, se me ocurre si podría ser lógico de entre ellas escoger aquella(s) que presente(n) un menor "error rate" para el C2 (aunque si en verdad en este punto estamos escogiendo el número de variables a seleccionar para cada bloque en el C1). De esta forma estaría entre la opción 30-30-1 y 30-30-6. En este caso, me surge la duda de si fuera mejor escoger la combinación 30-30-6 por el hecho de que así no se restringue a 1 sola variable el conjunto de proteínas. 
+Así pues, según estos resultados yo modificaría el objeto `list.keepX` de la siguiente forma:
+`list(mRNA = c(30, 30), miRNA = c(30, 30), protein = c(6, 6))`   
+¿Estarías de acuerdo con estos críterios?  
+
+Por otro lado, no termino de entender muy bien los criterios que se han usado para definir el argumento `test.keepX` (he usado los valores que hay en la página de ayuda de la función). Para los bloques mRNA y miRNA ha usado valores entre 10 y 40 variables, mientras que para las proteínas estos valores estaban entre 1 y 10, aunque los 3 bloques de datos iniciales presentaban un número variables no tanto distinto, si bien es cierto que era menor para las proteínas (142) que para los otros 2 bloques de datos (200 y 184).  
+Tampoco termino de entender muy bien porqué usa el bloque de las proteínas si luego en el conjunto de datos "test" no dispone de estos datos. ¿No sería más lógico hacer trabajar des de el principio con los datos mRNA y miRNA, que son para los cuales se dispone en ambos grupos de datos?  
 
 
 # Evaluación del modelo
@@ -291,7 +299,7 @@ for(i in 1:nrow(confusion.mat)){
 
 En el conjunto de datos "test", un "BER" del 24.3% estaría indicando una relativamente buena precisión de predicción para los subtipos de cáncer de mama.  
 La capacidad predictiva era similar entre los 3 subtipos de cáncer, ya que sus tasas de error se movían entre el `r round(min(er.class)*100,1)`% y el `r round(max(er.class)*100,1)`%.  
-  
+
 Para una nueva muestra, se puede calcular un conjunto de "H predicted component scores" 
 para cada tipo de conjunto de datos ómicos "q". 
 La clase predicha de la nueva muestra para cada conjunto de datos se obtiene a partir de la puntuación prevista utilizando una de las distancias Máxima, Centroides o Mahalanobis, lo que da lugar a la pertenencia a la clase "Q" para la nueva muestra.  
@@ -386,6 +394,8 @@ circosPlot(MyResult.diablo, cutoff = 0.7)
 Los mapas de imágenes agrupadas (CIM, del inglés "Clustered Image Maps") basados en la distancia euclidiana y la vinculación completa muestran una agrupación no supervisada entre las variables seleccionadas (centradas y escaladas) y las muestras. Las barras de color representan los grupos fenotípicos de las muestras (columnas) y los tipo de variables ómicas (filas).
 
 ```{r cimdiablo, eval=FALSE}
+cimDiablo(MyResult.diablo)
+
 cimDiablo(MyResult.diablo, 
           color.blocks = c('darkorchid', 'brown1', 'lightgreen'), 
           comp = 1, margin = c(8,20), legend.position = "right")
