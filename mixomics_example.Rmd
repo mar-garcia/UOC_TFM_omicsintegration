@@ -8,45 +8,110 @@ output:
     toc_float: true
 ---
 
-En este documento voy a intentar reproducir el ejemplo que se incluye en la descripción de la herramienta "DIABLO" del paquete "mixOmics" (https://mixomicsteam.github.io/Bookdown/diablo.html). Las siglas significan análisis de integración de datos para el descubrimiento de biomarcadores usando un componente latente (del inglés “Data Integration Analysis for Biomarker discovery using a Latent cOmponents). Los autores definen DIABLO como un algoritmo que extiende el PLS para la integración de múltiples conjuntos de datos. 
-  
+```{r startpoint, include = FALSE}
+startpoint <- Sys.time()
+```
+
+En este documento voy a intentar reproducir el ejemplo que se incluye en 
+la descripción de la herramienta "DIABLO" del paquete "mixOmics" 
+(https://mixomicsteam.github.io/Bookdown/diablo.html).   
+Las siglas "DIABLO" significan "análisis de integración de datos para el 
+descubrimiento de biomarcadores usando un componente latente" (del inglés 
+“Data Integration Analysis for Biomarker discovery using Latent cOmponents). 
+Se trata de un método para la integración de múltiples conjuntos de datos ómicos 
+que tiene como objetivo la búsqueda de aquellos patrones comunes existentes entre los diferentes tipos 
+de datos a la vez que discrimina entre distintos grupos fenotípicos.  
+DIABLO intenta maximizar la información común o correlacionada entre distintos 
+conjuntos de datos ómicos provinientes de las mismas muestras biológicas.  
+
 
 # Descripción del ejemplo  
-  
-En este ejemplo se quiere identificar un huella multiómica altamente correlacionada que discrimine grupos conocidos de muestras.   
-Las muestras utilizadas pertenecen al "The Cancer Genome Atlas Network".   
-Los datos que se van a usar ya han sido normalizados y filtrados.  
-Las muestras se han dividido en 2 grupos: "training set" (n=150 muestras con datos de mRNA, miRNA i proteómica) y "test set" (n=70 muestras, SIN datos de proteómica, es decir, sólo con datos de mRNA y miRNA).   
-El objetivo de este análisis de integración de datos ómicos es identificar una huella multiómica altamente correlacionada que discrimine los distintos subtipos de cáncer de mama "Basal", "Her2" y "LumA".  
-El `breast.TCGA` es una lista que contiene los grupos "traning" (`data.train`) y "test" (`data.test`). Ambos incluyen los siguientes datos:  
-  
-  * `miRNA`: un *data.frame* con 150 (70) filas y 184 columnas para el grupo "training" ("test") con los niveles de expresión de miRNA.  
-  * `mRNA`: un *data.frame* con 150 (70) filas y 520 columnas para el grupo "training" ("test") con los niveles de expresión de mRNA.  
-  * `protein`: un *data.frame* con 150 filas y 142 columnas solo para el grupo "training" con las abundancias de las proteínas.  
-  * `subtype`: un *factor* indicando los subtipos de cáncer de mama en el grupo "training" (longitud de 150) y "test" (longitud 70).  
-    
-Para ejemplificar el DIABLO, se va a proceder con la integración de los niveles de expresión de miRNA, mRNA y la abundancia de proteínas mientras se intenta discriminar entre los subtipos de cáncer de mama con las muestras del grupo "training", para luego predecir los subtipos en las muestras del grupo "test".  
 
-  
+En este ejemplo se quiere identificar un huella multiómica altamente 
+correlacionada que discrimine grupos conocidos de muestras.   
+Las muestras utilizadas pertenecen al "The Cancer Genome Atlas Network".   
+Los datos que se van a usar ya han sido normalizados y filtrados.   
+Las muestras se han dividido en 2 grupos: "training set" (n=150 muestras 
+con datos de mRNA, miRNA i proteómica) y "test set" (n=70 muestras, 
+SIN datos de proteómica, es decir, sólo con datos de mRNA y miRNA).   
+El objetivo de este análisis de integración de datos ómicos es identificar 
+una huella multiómica altamente correlacionada que discrimine los distintos 
+subtipos de cáncer de mama "Basal", "Her2" y "LumA".  
+El `breast.TCGA` es una lista que contiene los grupos "traning" 
+(`data.train`) y "test" (`data.test`). Ambos incluyen los siguientes datos:  
+
+* `miRNA`: un *data.frame* con 150 (70) filas y 184 columnas para el 
+grupo "training" ("test") con los niveles de expresión de miRNA.  
+* `mRNA`: un *data.frame* con 150 (70) filas y 520 columnas para el 
+grupo "training" ("test") con los niveles de expresión de mRNA.  
+* `protein`: un *data.frame* con 150 filas y 142 columnas solo para el
+grupo "training" con las abundancias de las proteínas.  
+* `subtype`: un *factor* indicando los subtipos de cáncer de mama en el 
+grupo "training" (longitud de 150) y "test" (longitud 70).  
+
+Para ejemplificar DIABLO, se va a proceder con la integración de los 
+niveles de expresión de miRNA y mRNA y de la abundancia de proteínas 
+mientras se intenta discriminar entre los subtipos de cáncer de mama con 
+las muestras del grupo "training", para luego predecir los subtipos en 
+las muestras del grupo "test".  
+
+
 # Principios del método DIABLO
 
-El método DIABLO se basa en una extensión del Análisis de Correlación Canónica Generalizada (el cual generaliza el PLS para múltiples conjuntos de datos coincidentes) y del método "sparse sGCCA".    
-DIABLO parte del paquete R `RGCCA`, donde se extendiero los métodos que incluía para diferentes tipos de análisis, incluyendo los análisis de N-integración no supervisados y supervisados.  
-  
-El objetivo de la **N-integración** con los métodos "sparse" es identificar variables correlacionadas (o co-expresadas) medidas en conjuntos de datos heterogéneos que también explican el resultado categórico de interés (análisis supervisado). La tarea de integración de datos múltiples no es trivial, ya que el análisis puede verse fuertemente afectado por la variación entre los fabricantes o las plataformas tecnológicas ómicas a pesar de ser medido en las mismas muestras biológicas. Antes de empezar la integración de datos, los autores de DIABLO sugerien encarecidamente que se realicen análisis individuales o en parejas con el sPLS-DA y el PLS para comprender primero las principales fuentes de variación en cada conjunto de datos y para orientar el proceso de integración.  
-  
-    
-DIABLO neceista como entrada una lista `X` de *data.frames* con n filas (el número de muestras) y un número diferente de variaciones en cada *data.frame*.   
-`Y` es un vector factor de longitud n que indica la clase de cada muestra (internamente es recodificado como una matriz *dummy*).   
-  
+El método DIABLO se basa en una extensión del Análisis de Correlación 
+Canónica Generalizada (GCCA, del inglés "Generalized Canonical Correlation Analysis")
+y de su método "sparse" (sGCCA) para una clasificación supervisada. 
+El GCCA generaliza el PLS para N conjuntos de datos ómicos provinientes de un mismo grupo de muestras.  
+El sGCCA es una técnica de análisis multivariante para la reducción de 
+dimensiones que utiliza la descomposición de valores singulares y selecciona 
+variables co-expresadas (correlacionadas) de varios conjuntos de datos ómicos.  
+sGCCA maximiza la covarianza entre las combinaciones lineales de las variables 
+("latent component scores") y proyecta los datos en el subespacio de menor dimensión abarcado por los componentes. 
+
+DIABLO parte del paquete R `RGCCA`, donde se extendieron los métodos que 
+incluía para diferentes tipos de análisis, incluyendo los análisis de 
+N-integración no supervisados y supervisados.  
+
+El objetivo de la **N-integración** con los métodos "sparse" es identificar 
+variables correlacionadas (o co-expresadas) medidas en conjuntos de datos heterogéneos
+que también explican el resultado categórico de interés (análisis supervisado). 
+La tarea de integración de datos múltiples no es trivial, ya que el análisis 
+puede verse fuertemente afectado por la variación entre los fabricantes o las
+plataformas tecnológicas ómicas a pesar de ser medido en las mismas muestras biológicas. 
+Antes de empezar la integración de datos, los autores de DIABLO sugerien 
+encarecidamente que se realicen análisis individuales o en parejas con el 
+sPLS-DA y el PLS para comprender primero las principales fuentes de variación 
+en cada conjunto de datos y para orientar el proceso de integración.  
+
+
+DIABLO necesita como entrada una lista `X` de *data.frames* con n filas 
+(el número de muestras) y un número diferente de variables en cada conjunto 
+de datos ómicos representado cada uno como un *data.frame*.   
+Se tienen que incluir las mismas muestras en cada uno de los conjuntos de datos ómicos.  
+`Y` es un vector factor de longitud n que indica la clase de cada muestra. 
+En el caso de que existan más de 2 clases, este vector es recodificado internamente como una matriz *dummy*.   
+DIABLO no asume distribuciones de datos particulares, pero
+todos los conjuntos de datos deben normalizarse apropiadamente de acuerdo 
+con cada plataforma ómica y preprocesarse si es necesario.  
+Además, cada variable será centrada y escalada internamente, 
+como se hace convencionalmente en los modelos basados en PLS.
+
 Los principales resultados de DIABLO son:  
-  
-  * Un **conjunto de componentes**, también llamados variables latentes, asociadas a cada conjunto de datos. Hay tantos componentes como la dimensión elegida de DIABLO.  
-  * Un **conjunto de vectores *loading* **, que son coeficientes asignados a cada variable para definir cada componente. Estos coeficientes indican la importancia de cada variable en DIABLO. Es importante señalar que cada vector *loading* está asociado a un componente particular. Los vectores *loading* se obtienen de manera que se maximiza la covarianza entre una combinación lineal de las variables de X y de Y.  
-  * Una **lista de variables seleccionadas** de cada conjunto de datos y asociadas a cada componente, en el caso que se aplique el método DIABLO "sparse".  
 
+* Un **conjunto de componentes**, también llamados variables latentes, asociadas 
+a cada conjunto de datos. Hay tantos componentes como la dimensión elegida de DIABLO.  
+* Un **conjunto de vectores *loading*, ** que son coeficientes asignados 
+a cada variable para definir cada componente. Estos coeficientes indican 
+la importancia de cada variable en DIABLO. Es importante señalar que cada 
+vector *loading* está asociado a un componente particular. Los vectores 
+*loading* se obtienen de manera que se maximiza la covarianza entre una 
+combinación lineal de las variables de X y de Y.  
+* Una **lista de variables seleccionadas** de cada conjunto de datos y 
+asociadas a cada componente, en el caso que se aplique el método DIABLO "sparse".  
 
-# Preliminarios
+DIABLO supone una relación lineal entre las variables ómicas seleccionadas para explicar la respuesta fenotípica, una suposición que puede no aplicarse en algunas áreas de investigación biológica, como por ejemplo cuando se integran estudios de metagenómica basados en la distancia, en los que se podrían explorar más las aproximaciones "kernel".
+
+# Preliminares
 
 ```{r preliminaries}
 library(mixOmics) # load the package
@@ -56,72 +121,133 @@ library(knitr)
 
 ## Preparación de los datos
 
-Para empezar se asignan los datos en una lista de *data.frames* `X` y en un factor `Y` que indica a que clase pertenece cada muestra. Cada *data.frame* en `X` debe ser **nombrado de manera consistente** para que coincida con el parámetro `keepX`.
+Para empezar se asignan los datos en una lista de *data.frames* `X` y en 
+un factor `Y` que indica a que clase pertenece cada muestra. 
+Cada *data.frame* en `X` debe ser **nombrado de manera consistente** para 
+que coincida con el parámetro `keepX`.
 
-```{r}
+```{r data-prep}
 data(breast.TCGA)
 # extract training data and name each data frame
 X <- list(mRNA = breast.TCGA$data.train$mrna, 
           miRNA = breast.TCGA$data.train$mirna, 
           protein = breast.TCGA$data.train$protein)
 Y <- breast.TCGA$data.train$subtype
-summary(Y) # check that the dimensions
+summary(Y) # check the dimensions
 
-# set up arbitrarily the number of variables "keepX" that we wish to select in each data set and each component: 
-list.keepX <- list(mRNA = c(16, 17), miRNA = c(18,5), protein = c(5, 5)) 
+# set up arbitrarily the number of variables "keepX" that 
+# we wish to select in each data set and each component: 
+list.keepX <- list(mRNA = c(16, 17), miRNA = c(18, 5), protein = c(5, 5)) 
 ```
 
 # Ejecutar el método
 
-Para este ejemplo se realiza la versión "sparse", ya que se quiere identificar una mínima huella multi-ómica.
+Para este ejemplo se realiza la versión "sparse", ya que se quiere 
+identificar una mínima huella multi-ómica.
 
-```{r}
+```{r method-run}
 MyResult.diablo <- block.splsda(
   X, Y, keepX = list.keepX, 
   ncomp = 2, scale = TRUE, mode = "regression")
 ```
 
-El número de componentes a retener se especifica en el argumento `ncomp.` 
-La regla general es K-1 donde K es el número de clases, pero vale la pena probar algunos componentes extra.  
-  
-La matriz de diseño `design` indica qué conjuntos o bloques de datos deben conectarse para maximizar la covarianza entre los componentes y en qué medida. Es necesario alcanzar un compromiso entre la maximización de la correlación entre los conjuntos de datos (valor de diseño entre 0,5 y 1) y la maximización de la discriminación con el resultado Y (valor de diseño entre 0 y 0,5).
+## Ajuste de parámetros
 
-```{r}
+Hay tres tipos de parámetros para ajustar en DIABLO.
+
+### Matriz de diseño
+
+La matriz de diseño C es una matriz (Q × Q) con valores que van de 0 a 1, 
+que especifica como los conjuntos de datos deben ser conectados.   
+Es decir, indica qué conjuntos o bloques de datos deben 
+conectarse para maximizar la covarianza entre los componentes y en qué medida. 
+Es necesario alcanzar un compromiso entre la maximización de la correlación 
+entre los conjuntos de datos (valores entre 0.5 y 1) y la maximización 
+de la discriminación con el resultado Y (valores entre 0 y 0.5).  
+Posteriormente, cada conjunto de datos es conectado internamente con la variable *Y*. 
+
+```{r design-matrix}
 MyResult.diablo$design
 MyDesign <- matrix(c(0, 0.1, 0.3,
                      0.1, 0, 0.9,
                      0.3, 0.9, 0),
                    byrow=TRUE,
                    ncol = length(X), nrow = length(X),
-                 dimnames = list(names(X), names(X)))
+                   dimnames = list(names(X), names(X)))
 MyDesign
-MyResult.diablo.design <- block.splsda(X, Y, keepX=list.keepX, design=MyDesign)
+MyResult.diablo.design <- block.splsda(X, Y, keepX = list.keepX, 
+                                       design = MyDesign)
 ```
 
-Se recomienda que inicialmente se tenga en cuenta algún conocimiento biológico previo que pueda tener sobre la relación que espera ver entre los conjuntos de datos. Luego se pueden realizar algunas pruebas en una versión "non-sparse" `block.plsda` , mirar el rendimiento de la clasificación con `perf` y `plotDiablo` antes de decidir el diseño final.
+Se recomienda que inicialmente se tenga en cuenta algún conocimiento biológico 
+previo que pueda tener sobre la relación que espera ver entre los conjuntos de datos. 
+Luego se pueden realizar algunas pruebas en una versión "non-sparse" `block.plsda`, 
+y mirar el rendimiento de la clasificación con `perf` y `plotDiablo` antes de decidir el diseño final.  
+Si la correlación entre el primer componente de cada conjunto de datos ómicos está por encima de un umbral determinado (por ejemplo, 0.8), entonces en la matriz C se incluye una connexión entre esos conjuntos de datos con un valor de 1.    
 
 
-En el caso que el "tuning step" indique que para un determinado conjunto de datos solo se ha seleccionado 1 variable, se recomienda elegir una cuadrícula de valores `keepX` que comience con un valor más alto (por ejemplo, 5). Lo que sucedió es que el algoritmo encontró un modelo óptimo con 1 sola variable, ya sea porque es altamente discriminatoria o porque los datos son ruidosos, pero esto no justifica que no se puedan hacer otras pruebas intentando seleccionar más variables.  
+### Número de componentes
+
+El número de componentes a retener se especifica en el argumento `ncomp.` 
+La regla general es K-1 donde K es el número de clases, pero vale la pena 
+probar algunos componentes extra.  
+
+
+### Número de variables a seleccionar por conjunto de datos y componente
+
+Identificación del número óptimo de biomarcadores a seleccionar para cada conjunto de datos ómicos.  
+
+En el caso que el "tuning step" indique que para un determinado conjunto 
+de datos solo se ha seleccionado 1 variable, se recomienda elegir una cuadrícula 
+de valores `keepX` que comience con un valor más alto (por ejemplo, 5). 
+Lo que podría estar sucediendo es que el algoritmo hubiera encontrado un modelo óptimo con 1 sola variable, 
+ya sea porque es altamente discriminatoria o porque los datos son ruidosos,
+pero esto no justifica que no se puedan hacer otras pruebas intentando seleccionar más variables.  
+
+```{r keepX}
+test.keepX = list(mrna = seq(10,40,20), mirna = seq(10,30,10), protein = seq(1,10,5))
+tune = tune.block.splsda(
+  X = X, Y = Y, ncomp = 2, test.keepX = test.keepX, 
+  design = matrix(1, ncol = length(X), nrow = length(X), 
+                  dimnames = list(names(X), names(X))), 
+  nrepeat = 3)
+tune$choice.keepX
+tune$error.rate
+```
+
+¿En base a estos resultados, se tendría que modificar el objeto `list.keepX` de la siguiente forma?  
+`list(mRNA = c(30, 10), miRNA = c(20, 30), protein = c(1, 6))`   
+Es decir, el panel multiómico óptimo consistiría en 30 mRNAs, 20 miRNAs y 1 proteína para el componente 1, y 10 mRNAs, 30 miRNAs, 5 CpGs y 6 proteínas para el componente 2. Es decir, un total de 40 mRNAs, 50 miRNAs y 7 proteínas.  
+   
+De todas formas me surgen las siguientes dudas:  
+  
+  * Según `tune$choice.keepX`, para el primer componente el "keep" óptimo sería 30-10-1 (mrna-mirna-protein), pero viendo `tune$error.rate` interpreto que el "keep" óptimo puede ser qualquiera de las siguientes 3 combinaciones ya que el error rate siempre es igual (0.333): 30-10-1, 30-20-1 y 30-10-6. Interpreto que el algoritmo ha escogido 30-10-1 porqué es la primera combinación con el mínimo "error rate" para el "comp1". ¿Es correcta esta interpretación?  
+  * En un primer momento he escogido la combinación 30-20-1 para el primer componente, porqué de las 3 combinaciones con el mismo "error rate" para el C1 es que el que presenta un menor "error rate" para el C2. De todas formas, me surge la duda de si fuera mejor escoger la combinación 30-10-6 por el hecho de que así no se restringue a 1 sola variable el conjunto de proteínas. ¿Estás de acuerdo que, a igual "error rate" para C1, aunque el menor "error rate" para el C2 fuera 30-20-1 (siempre hablando de C1), sería mejor indicar 30-10-6 por el hecho de no restringuirse ya desde el principio a la selección de 1 sola variable para 1 conjunto de datos?  
 
 
 # Evaluación del modelo
 
 ## Capacidad de clasificar
 
-Se utiliza la validación cruzada aleatoria con la función `perf` para evaluar la predicción del modelo.
+Se utiliza la validación cruzada aleatoria con la función `perf` para 
+evaluar la predicción del modelo.
 
-```{r}
+```{r performance}
 set.seed(123) # for reproducibility in this vignette
 MyPerf.diablo <- perf(MyResult.diablo, validation = 'Mfold', folds = 5, 
-                   nrepeat = 10, 
-                   dist = 'centroids.dist')
+                      nrepeat = 10, 
+                      dist = 'centroids.dist')
 MyPerf.diablo  # lists the different outputs
 
 # Performance with Majority vote
 MyPerf.diablo$MajorityVote.error.rate
 ```
 
-En caso que aparezca un error del tipo `system computationally singular`, revisa que el valor "M" de tu "M-fold" no sea demasiado grande en comparación a la "n" (como regla general se usa n/M > 6-8). En caso de no ser posible, se recomienda probar el método "leave-one-out" con `validation = "loo"` i asegurarse que `ncomp` no sea demasiado grande ya que se podrían estar ejecutando matrices vacías.
+En caso que aparezca un error del tipo `system computationally singular`, 
+revisa que el valor "M" del "M-fold" no sea demasiado grande en comparación 
+a la "n" (como regla general se usa n/M > 6-8). En caso de no ser posible, 
+se recomienda probar el método "leave-one-out" con `validation = "loo"` y 
+asegurarse que `ncomp` no sea demasiado grande ya que se podrían estar ejecutando matrices vacías.
 
 ## AUC
 
@@ -135,97 +261,156 @@ Myauc.diablo <- auroc(MyResult.diablo, roc.block = "miRNA", roc.comp = 2)
 
 La función de `predict`  predice la clase de muestras de un conjunto "test".
 Aunque en el presente ejemplo falta un conjunto de datos en el conjunto "test", el método todavía se puede aplicar. 
-Es necesario asegurarse de que los nombres de los bloques son exactamente iguales.
+Es necesario asegurarse de que los nombres de los bloques sean exactamente iguales.
 
-```{r}
+```{r prediction}
 # prepare test set data: here one block (proteins) is missing
 X.test <- list(mRNA = breast.TCGA$data.test$mrna, 
-                      miRNA = breast.TCGA$data.test$mirna)
+               miRNA = breast.TCGA$data.test$mirna)
 
 Mypredict.diablo <- predict(MyResult.diablo, newdata = X.test)
 # the warning message will inform us that one block is missing
 Mypredict.diablo # list the different outputs
 ```
-La tabla de confusión compara los subtipos reales con los subtipos previstos para un modelo de 2 componentes, para la distancia de interés:
 
-```{r}
+La tabla de confusión compara los subtipos reales con los subtipos previstos 
+para un modelo de 2 componentes, para la distancia de interés:
+
+```{r confusion-matrix}
 confusion.mat <- get.confusion_matrix(
-                truth = breast.TCGA$data.test$subtype, 
-                predicted = Mypredict.diablo$MajorityVote$centroids.dist[,2])
+  truth = breast.TCGA$data.test$subtype, 
+  predicted = Mypredict.diablo$MajorityVote$centroids.dist[,2])
 kable(confusion.mat)
 get.BER(confusion.mat)
+
+er.class = c()
+for(i in 1:nrow(confusion.mat)){
+  er.class = c(er.class, 1-(confusion.mat[i,i]/rowSums(confusion.mat)[i]))
+}
 ```
 
+En el conjunto de datos "test", un "BER" del 24.3% estaría indicando una relativamente buena precisión de predicción para los subtipos de cáncer de mama.  
+La capacidad predictiva era similar entre los 3 subtipos de cáncer, ya que sus tasas de error se movían entre el `r round(min(er.class)*100,1)`% y el `r round(max(er.class)*100,1)`%.  
+  
+Para una nueva muestra, se puede calcular un conjunto de "H predicted component scores" 
+para cada tipo de conjunto de datos ómicos "q". 
+La clase predicha de la nueva muestra para cada conjunto de datos se obtiene a partir de la puntuación prevista utilizando una de las distancias Máxima, Centroides o Mahalanobis, lo que da lugar a la pertenencia a la clase "Q" para la nueva muestra.  
+Dado que los diferentes conjuntos de datos ómicos pueden no estar todos de acuerdo en una clase prevista, la pertenencia a una clase de consenso se determina utilizando un voto mayoritario, un voto mayoritario ponderado o promediando todos los votos. En caso de empate en el esquema de voto mayoritario, se asigna "NA" como predicción pero se cuenta como un error de clasificación durante la evaluación del rendimiento.
 
-# Representación gráfica de las muestras
+# Representaciones gráficas
 
-DIABLO genera un par de componentes, cada uno asociado a cada conjunto de datos. 
-Es por eso que se visualizan 3 gráficos para las muestras.  
-Como DIABLO es un método supervisado, las muestras se representan con diferentes colores dependiendo de su clase conocida.  
+En este paquete de R se han propuesto e integrado diversas representaciones gráficas para facilitar la interpretación de los resultados obtenidos.
 
-```{r}
+
+## Muestras
+
+### `plotIndiv`
+
+Los gráficos de las muestras exponen la distribución de los individuos según dos componentes para cada bloque de datos ómicos. Esto permite observar como se agrupan las muestras en estos dos componentes. Como DIABLO es un método supervisado, las muestras se representan con 
+diferentes colores dependiendo de su clase conocida.  
+
+```{r plotindiv-block}
 plotIndiv(MyResult.diablo, 
           ind.names = FALSE, legend=TRUE, 
           cex = c(1,2,3), title = 'BRCA with DIABLO') 
 ```
 
-# Representación gráfica de las variables
+También se puede obtener un gráfico de consenso que representa las muestras calculando el promedio de los componentes de cada conjunto de datos.
 
-La gráfica de variables sugiere alguna estructura de correlación entre las proteínas, el mRNA y el miRNA.
+```{r plotindiv-consensus}
+plotIndiv(MyResult.diablo, blocks = "consensus", ellipse = TRUE)
+```
 
-```{r}
+Todas las gráficas muestran la separación de las muestras según su fenotipo, lo que estaría dando un primer indicio de que el modelo generado con el algoritmo DIABLO consigió una buena separación de los grupos.  
+
+## Variables
+
+Los gráficos de las variables dan más información sobre las variables que fueron seleccionadas por DIABLO.   
+
+### `plotVar`
+
+La gráfica de variables que se obtiene mediante la función `plotVar` muestra 
+la estructura de correlación existente entre los distintos bloques de datos 
+ómicos en dos componentes, y permite ver si alguno de estos componentes captura una correlación de almenos dos tipos de datos.  
+
+```{r plotvar}
 plotVar(MyResult.diablo, 
         var.names = c(FALSE, FALSE, TRUE), 
         legend = TRUE, pch = c(16,16,1))
 ```
 
+En este caso, el gráfico sugiere alguna estructura de correlación entre las proteínas, el mRNA y el miRNA.
 
-# Otros gráficos
 
-## `plotDiablo`
-La función `plotDiablo` permite obtener una visión global de la estructura de correlación a nivel de un determinado componente. La función traza los componentes a través de los diferentes conjuntos de datos para la dimensión escogida y los colores indican la clase de cada muestra.
+### `plotLoadings`
 
-```{r}
+La función `plotLoadings` permite visualizar los *loading* de cada variable 
+seleccionada en cada componente (`comp = 1`) y en cada conjunto de datos. 
+El color indica la clase en la que la variable tiene el máximo nivel de 
+expresión (`contrib = "max"`) o el mínimo (`contrib = "min"`), en promedio 
+(`method = "mean"`) o utilizando la mediana (`method = "median")`. 
+
+```{r plotloadings}
+plotLoadings(MyResult.diablo, comp = 2, contrib = "max")
+```
+
+
+### `plotDiablo`
+La función `plotDiablo` permite obtener una visión global de la estructura 
+de correlación a nivel de un determinado componente. La función traza los 
+componentes a través de los diferentes conjuntos de datos para la dimensión 
+escogida y los colores indican la clase de cada muestra.
+
+```{r plotdiablo}
 plotDiablo(MyResult.diablo, ncomp = 1)
 ```
 
 Aquí se puede observar que DIABLO consigue extraer una fuerte correlación entre los conjuntos de datos de mRNA y proteínas.   
 
-## `circosPlot`
-  
-El gráfico "circos" representa las correlaciones entre variables de diferentes tipos, representadas en los cuadrantes laterales. Son posibles varias opciones de visualización, para mostrar las conexiones intra- e inter-bloques, los niveles de expresión de cada variable según cada clase (con el argumento `line = TRUE`). El gráfico "circos" se construye en base a una matriz de similaridad. Se puede incluir el argumento `cutoff``   para visualizar los coeficientes de correlación por encima de este umbral en la firma multi-ómica.  
+### `circosPlot`
 
-```{r}
-circosPlot(MyResult.diablo, cutoff=0.7)
+El gráfico "circos" representa las correlaciones entre variables de diferentes tipos. 
+Este tipo de gráfico se construye en base a una matriz de similaridad: 
+la asociación entre las variables se calcula usando un puntaje de similitud 
+que es análogo a un coeficiente de correlación de Pearson. 
+Esta asociación se muestra a través de líneas que connectan las distintas variables mediante un código de colores para representar una correlación positiva o negativa por encima del umbral especificado.  
+También se pueden representar los niveles de expresión de cada variable según cada clase (con el argumento `line = TRUE`). 
+
+```{r circosplot}
+circosPlot(MyResult.diablo, cutoff = 0.7)
 ```
 
 
-## `cimDiablo`
+### `cimDiablo`
 
-La función `cimDiablo` es un mapa de imágenes agrupadas implementado específicamente para representar la expresión de la huella molecular multiómica de cada muestra. Es muy similar al clásico agrupamiento jerárquico:
+Los mapas de imágenes agrupadas (CIM, del inglés "Clustered Image Maps") basados en la distancia euclidiana y la vinculación completa muestran una agrupación no supervisada entre las variables seleccionadas (centradas y escaladas) y las muestras. Las barras de color representan los grupos fenotípicos de las muestras (columnas) y los tipo de variables ómicas (filas).
 
-```{r, eval=FALSE}
+```{r cimdiablo, eval=FALSE}
 cimDiablo(MyResult.diablo, 
           color.blocks = c('darkorchid', 'brown1', 'lightgreen'), 
           comp = 1, margin = c(8,20), legend.position = "right")
 ```
 
-## `plotLoadings`
+### `network`
 
-La función `plotLoadings` permite visualizar los *loading* de cada variable seleccionada en cada componente (`comp = 1`) y en cada conjunto de datos. El color indica la clase en la que la variable tiene el máximo nivel de expresión (`contrib = "max"`) o el mínimo (`contrib = "min"`), en promedio (`method = "mean"`) o utilizando la mediana (`method = "median")`. 
+Otra visualización de la correlación entre los diferentes tipos de variables 
+es la red de relevancia, que también se construye sobre la matriz de similitud. 
+Cada color representa un tipo de variable. También se puede establecer un 
+umbral utilizando el argumento de corte.
 
-```{r}
-plotLoadings(MyResult.diablo, comp = 2, contrib = "max")
-```
-
-## `network`
-
-Otra visualización de la correlación entre los diferentes tipos de variables es la red de relevancia, que también se construye sobre la matriz de similitud. Cada color representa un tipo de variable. También se puede establecer un umbral utilizando el argumento de corte.
-
-```{r}
+```{r network}
 network(MyResult.diablo, blocks = c(1,2,3),
         color.node = c('darkorchid', 'brown1', 'lightgreen'), 
         cutoff = 0.6, save = 'jpeg', name.save = 'DIABLOnetwork')
 ```
 
 ![](/Users/lenovo/Documents/GitHub/UOC_TFM_omicsintegration/DIABLOnetwork.jpeg)
+
+En general, las variables del panel de biomarcadores multi-ómicos formaron una red de 2 grupos de variables densamente conectadas. 
+
+# Session information
+
+```{r session}
+Sys.time()-startpoint
+devtools::session_info()
+```
