@@ -12,6 +12,21 @@ output:
 startpoint <- Sys.time()
 ```
 
+```{r}
+library(reticulate)
+
+# Using a specific python binary
+#use_python("/home/user/python", required = TRUE)
+use_python("C:/Users/lenovo/Documents/R/win-library/4.0/reticulate/python", required = TRUE)
+
+# Using a conda enviroment called "r-reticulate"
+use_condaenv("r-reticulate", required = TRUE)
+
+# Using a virtual environment called "r-reticulate"
+#use_virtualenv("r-reticulate", required = TRUE)
+```
+
+
 En este documento voy a intentar reproducir el ejemplo que se incluye en 
 la descripción del paquete "MOFA", cuyas siglas significan "análisis de factores multi-ómicos" (del inglés 
 “Multi‐Omics Factor Analysis"). 
@@ -180,9 +195,6 @@ Opcionalmente, podemos hacer una regresión con algunas covariables (técnicas) 
 Ahora estamos listos para entrenar el `MOFAobjet`, lo cual se hace con la función `runMOFA`. 
 
 ```{r, eval=FALSE}
-library(reticulate)
-use_python("C:/Users/lenovo/Documents/R/win-library/4.0/reticulate/python", required = TRUE)
-use_condaenv("r-reticulate", required = TRUE)
 MOFAobject <- runMOFA(MOFAobject)
 ```
 
