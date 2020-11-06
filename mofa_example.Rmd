@@ -18,6 +18,8 @@ library(reticulate)
 # Using a specific python binary
 #use_python("/home/user/python", required = TRUE)
 use_python("C:/Users/lenovo/Documents/R/win-library/4.0/reticulate/python", required = TRUE)
+#use_python("C:/Users/lenovo/AppData/Local/Packages/PythonSoftwareFoundation.Python.3.7_qbz5n2kfra8p0/LocalCache/local-packages/Python37/site-packages")
+#use_python("C:/Users/lenovo/AppData/Local/r-miniconda/envs/r-reticulate/Lib/site-packages", required = TRUE)
 
 # Using a conda enviroment called "r-reticulate"
 use_condaenv("r-reticulate", required = TRUE)
