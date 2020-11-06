@@ -1,0 +1,395 @@
+---
+title: "MFA: wines"
+author: "Mar Garcia-Aloy"
+output: 
+  html_document:
+    toc: true
+    number_sections: false
+    toc_float: true
+---
+
+```{r startpoint, include = FALSE}
+startpoint <- Sys.time()
+```
+
+http://factominer.free.fr/
+
+https://www.youtube.com/watch?v=7HHuKsl2_fk&feature=youtu.be 
+
+http://factominer.free.fr/factomethods/multiple-factor-analysis.html
+
+
+# Principios del método MFA
+
+Las siglas "MFA" significan "análisis de factores múltiples" (del inglés "multiple factor analysis"). 
+Se trata de otro método que ayuda a integrar los conjuntos de datos ómicos proyectándolos en un espacio de variables de baja dimensión. 
+El análisis de factores múltiples está dedicado a los conjuntos de datos en los que las variables se estructuran en grupos, permitiendo la integración diversos conjutnos de variables (tanto numéricas como categóricas) con la finalidad de que sean estudiadas simultáneamente. También permite la adición de un grupo suplementario de datos en el análisis. 
+El análisis de factores múltiples proporciona una representación equilibrada de las estructuras individuales así como de las comunes, al tiempo que integra los conjuntos de datos. 
+El análisis de componentes principales se aplica a cada dato ómico para identificar los patrones individuales. 
+El análisis global para identificar la estructura común implica la identificación de la matriz de varianza-covarianza para cada conjunto de datos. 
+También proporciona la matriz de variables que permite la visualización de las estructuras individuales y comunes. 
+
+
+```{r}
+library(FactoMineR) # load the library
+library(kableExtra)
+```
+
+# Descripción del ejemplo
+
+El *dataset* de demostración consiste en un conjunto de datos en el que 21 vinos fueron descritos por un panel de expertos utilizando descriptores sensoriales. 
+
+```{r}
+data(wine) # load the wine data set
+wine %>%
+  kbl() %>%
+  kable_minimal()
+```
+
+También se registraron dos variables cualitativas: el origen de los vinos ("Label") y el tipo de suelo en el que la uva fue cultivada ("Soil").
+
+```{r}
+table(wine$Label) %>%
+  kbl(caption = "Origen de los vinos") %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+
+table(wine$Soil) %>%
+  kbl(caption = "Tipo de suelo") %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+```
+
+Tenemos por tanto 21 filas de vinos, y 31 columnas de variables: 2 cualitativas ("Label" y "Soil") y 29 cuantitativas, que se pueden agrupar en 5 grupos de variables:   
+
+- olores pre-agitación (v=5): 
+   * "Odor.Intensity.before.shaking"  
+   * "Aroma.quality.before.shaking"  
+   * "Fruity.before.shaking"  
+   * "Flower.before.shaking"  
+   * "Spice.before.shaking")  
+- percepciones visuales (v=3):   
+   * "Visual.intensity"  
+   * "Nuance" (matiz)  
+   * "Surface.feeling"  
+- variables gustativas (v=10):  
+   * "Odor.Intensity"  
+   * "Quality.of.odour"  
+   * "Fruity"  
+   * "Flower"  
+   * "Spice"  
+   * "Plante"  
+   * "Phenolic"  
+   * "Aroma.intensity"
+   * "Aroma.persistency"   
+   * "Aroma.quality"  
+- olores después de la agitación (v=9):  
+   * "Attack.intensity"   
+   * "Acidity"  
+   * "Astringency"  
+   * "Alcohol"  
+   * "Balance"  
+   * "Smooth"  
+   * "Bitterness"  
+   * "Intensity"  
+   * "Harmony"  
+- apreciación de la degustación (v=2):   
+   * "Overall.quality"  
+   * "Typical"  
+
+Para cada vino, el valor indicado es la media obtenida para todos los jueces.   
+   
+Los grupos de olor pre-agitación, percepciones visuales, variables gustativas y olores después de la agitación se consideran grupos activos, mientras que los grupos de origen del vino y de apreciación de la degustación se consideran grupos suplementarios.  
+
+## Objetivos
+
+Queremos caracterizar los vinos. Buscamos una tipología de los vinos.  
+  
+El método apropiado de componentes principales para caracterizar los vinos por variables continuas es el Análisis de Componentes Principales (PCA).  
+Sin embargo, podemos ver que el conjunto de datos está estructurado. Las variables forman grupos diferentes:  
+  
+- Un grupo categórico (variables *Label* y *Soil*)  
+- Un grupo relativo a los olores antes de la agitación (variables *Odor.Intensity.before.shaking*, *Aroma.quality.before.shaking*, *Fruity.before.shaking*, *Flower.before.shaking* y *Spice.before.shaking*)  
+- Un grupo relativo a los olores después de la agitación (variables *Odor.Intensity*, *Quality.of.odour*, *Fruity*, *Flower*, *Spice*, *Plante*, *Phenolic*, *Aroma.intensity*, *Aroma.persistency* y *Aroma.quality*)  
+- Un grupo relativo a la evaluación visual (variables *Visual.intensity*, *Nuance* y *Surface.feeling*)  
+- Un grupo relativo al sabor (variables *Attack.intensity*, *Acidity*, *Astringency*, *Alcohol*, *Balance*, *Smooth*, *Bitterness*, *Intensity* y *Harmony*)  
+- Y un último grupo relativo a un juicio global (variables *Overall.quality* y *Typical*)  
+  
+Surgen nuevos objetivos como la comparación de grupos de variables (dos grupos de variables están próximos entre sí si dos vinos próximos según el primer grupo de variables están próximos según el segundo) y destacar una tipología de los grupos o comparar simultáneamente las tipologías de los vinos vistos por cada grupo de variables tomadas una a una.  
+
+
+# Ejecución del modelo
+
+Así pues, vamos a estudiar los perfiles de los vinos según la evaluación sensorial. Utilizaremos como grupos activos los grupos de olores pre-agitación, olores post-agitación, evaluación visual y gustativa, mientras que los grupos de origen y juico global van a ser considerados como suplementarios.
+
+La función MFA toma como entrada el conjunto de datos del vino, y luego es necesario definir los grupos de variables.  
+El MFA equilibrará la influencia de cada uno de estos grupos en la construcción de las dimensiones.  
+
+La opción `ncp = 5` significa que se quiere obtener los resultados de las cinco primeras dimensiones.  
+
+El primer grupo de variables consiste en las 2 primeras variables (origen y suelo, variables cualitativas), el segundo grupo contiene las 5 siguientes (olores pre-agitación), el tercero las 3 siguientes (percepciones visuales), el cuarto las 10 siguientes (variables gustativas), el quinto las 9 siguientes (olores post-agitación), y el último grupo contiene las 2 últimas variables (apreciación de la degustación).    
+
+La naturaleza de las variables de un grupo se especifica con el argumento `type`. Se especifica el tipo de cada grupo de variables con "c" para las continuas o cuantitativas, "s" para las continuas o cuantitativas pero con variables "escaladas", "n" para los grupos de variables nominales (o cualitativas), y "f" para las tablas de frecuencias. 
+Así, en el ejemplo, el primer grupo está compuesto por variables cualitativas ("n"), mientras que todos los grupos siguientes contienen variables cuantitativas "escaladas" ("s").  
+
+Es posible nombrar los grupos de variables, utilizando el parámetro `name.group`: un grupo para el origen de los vinos ("orig": incluyendo variables de "origen" y "tipo de suelo"), un grupo de variables de descripción de olores pre-agitación ("smell"), un grupo de variables visuales ("vis"), un grupo sobre la degustación ("tasting"), un grupo para el olor después de la agitación ("smellAf"), y un grupo de preferencia general ("pref").  
+
+Luego se especifica que los grupos de variables número 1 y 6, es decir, el grupo para el origen ("orig") y el grupo de la preferencia global ("pref"), son grupos suplementarios que no participan en la construcción de las dimensiones.  
+
+Una vez que el MFA ha sido parametrizado y ejecutado, se proporcionan diversos gráficos.   
+
+```{r}
+res <- MFA(wine, 
+           group = c(2, 5, 3, 10, 9, 2), 
+           type = c("n", rep("s", 5)),
+           ncp = 5, 
+           name.group = c("orig","smell","vis","tasting","smellAf","pref"),
+           num.group.sup = c(1, 6)
+)
+```
+
+Al hacer un resumen de los principales resultados, se obtiene una tabla con los *"eigenvalues"* y los porcentajes de inercia asociados a cada dimensión.
+
+```{r}
+summary(res)
+```
+
+
+La primera cubre el 49% de la información, es decir, el 49% de la inercia, y la segunda dimensión, el 19%.  
+
+```{r}
+res$eig[c(1:3, 18:20),] %>%
+  kbl() %>%
+  kable_minimal()
+```
+
+A continuación tenemos los resultados sobre los grupos de variables, es decir, los grupos activos primero con las coordenadas de los grupos (Dim.1), las contribuciones de cada uno de los grupos a la construcción de la primera dimensión (ctr), y su calidad de representación en la primera dimensión (cos2).  
+Luego, los mismos resultados en la segunda dimensión (coordenadas, contribuciones y coseno al cuadrado), y luego la 3ª dimensión. Por defecto, la función `summary` proporciona los resultados en las 3 primeras dimensiones, pero se pueden ver los resultados de las dimensiones que deseen usando el argumento `ncp`.    
+
+A continuación, tenemos los resultados de los grupos suplementarios, dando las coordenadas (Dim.) y el coseno al cuadrado (cos2).  
+En este caso no hay contribuciones, ya que se trata de grupos que no contribuyeron a la construcción de las dimensiones.  
+
+La siguiente tabla proporciona los resultados sobre los individuos, por defecto los 10 primeros individuos. Si queremos los resultados en todos los individuos usamos el argumento `nbelements = Inf`.  
+Aquí de nuevo obtenemos las coordenadas (Dim.), las contribuciones (ctr) y el coseno al cuadrado (cos2), primero en la primera dimensión, luego en la segunda y luego en la tercera.   
+
+A continuación, tenemos los resultados de las variables cuantitativas activas (en este ejemplo no hay variables cualitativas activas), es decir, los resultados de las diez primeras variables, de nuevo con las coordenadas (Dim.), las contribuciones (ctr) y el coseno al cuadrado (cos2).   
+
+Para las variables cuantitativas suplementarias, tenemos sólo las coordenadas y el cos²; aquí también, estas son variables que no contribuyeron a la construcción de las dimensiones.  
+En cambio, para las variables cualitativas suplementarias, además de las coordenadas y el cos2 también obtenemos un valor de prueba denominado "v.test". El valor de prueba indica si el valor de las coordenadas de una categoría es significativamente diferente de cero, o no. Más precisamente, el valor de prueba corresponde a la transformación de un valor p en un cuantil de la distribución normal. Si el valor p es inferior al 5%, entonces el valor absoluto del valor de prueba será mayor que 1.96. El signo del valor de la prueba indica si el valor de la coordenada de la categoría es inferior (signo negativo) o superior (signo positivo) a 0. Por ejemplo, la categoría "Env4" tiene un valor de coordenadas significativamente diferente a 0 en la 2ª dimensión; y mayor que 0 en esta 2ª dimensión.  
+
+
+# Interpretación de los resultados
+
+A continuación vamos a plotar y a comentar los distintos gráficos que se pueden obtener.  
+En primer lugar se puede dibujar el gráfico que muestra los grupos de variables, con triángulos sólidos para los grupos activos, y triángulos vacíos para los grupos suplementarios. Los colores de cada uno de los grupos de este gráfico se reutilizarán en los otros.   
+Si un grupo tiene un valor de coordenadas elevado en una determinada dimensión, entonces esa dimensión también está presente en el grupo de variables. En otras palabras, el grupo "smell-smellAf-tasting-vis" divide a los vinos como lo hace el MFA con esta dimensión. 
+Si dos grupos de variables tienen coordenadas grandes y parecidas en varias dimensiones, entonces inducen estructuras similares en las muestras.
+
+```{r}
+plot(res, choix="group")
+```
+
+Los cuatro grupos activos tienen coordenadas cercanas en la primera dimensión, lo que significa que su contribución a la primera componente principal es bastante igual. También significa que el primer componente principal del MFA es común a todos los grupos.  
+En cuanto a la segunda dimensión, son los grupos olfativos pre-agitación los que tienen las coordenadas más altas. Estos dos grupos son los que más contribuyen al segundo componente principal.
+
+Ahora vamos a obtener un gráfico que indica la media de cada muestra, es decir, las muestras vistas por todos los grupos de variables activas:  
+
+```{r}
+plot(res, choix="ind", invisible = c("quali.sup"), cex = 0.8)
+```
+
+Por ejemplo, los vinos T1 y T2 tienen perfiles sensoriales muy similares cuando se tienen en cuenta todos los puntos de vista sensoriales (olfativo pre- y post-agiración, visual, y gustativo).
+
+Como en este ejemplo análisis algunos grupos de variables están compuestos por variables cuantitativas, también se puede obtener un gráfico de variables con el círculo de correlación:
+
+```{r}
+plot(res, choix = "var")
+```
+
+En este gráfico las variables están coloreadas según al grupo a que pertenecen.  
+Esta gráfica de variables puede ser interpretada simultáneamente con la gráfica de los individuos, como en el caso de los PCA.  
+Así, por ejemplo, los vinos situados a la derecha del gráfico son vinos intensos en términos de aroma y sabor.  
+Y los vinos situados en la parte superior del gráfico son picantes.    
+
+Es decir, tanto el gráfico donde se muestran distribución de las muestras (`choix = "ind"`) como el que se muestra la distribución de las variables (`choix = "var"`) puden ser interpretados de la misma manera que los gráficos obtenidos con un PCA.  
+La representación de las variables muestra que la mayoría de las variables están altamente correlacionadas con la primera dimensión, cualquiera que sea el grupo al que pertenezcan. Esta dimensión representa la "intensidad" y la "armonía" (ambas del grupo *"smellAf"*), nociones positivas que se utilizan comúnmente cuando se habla de vinos.  
+Las variables que más se correlacionan con la segunda dimensión son la *"Spice before shaking"* y la *"Odor intensity before shaking"* para el grupo de los **olores pre-agitación**, la *"Spice"*, la *"Plante"* y la *"Odor.Intensity"* para el grupo de los **olores post-agitación** y la *"Bitterness "* para el grupo de los **sabores**. Esta dimensión representa una característica picante y vegetal, esencialmente debida al olfato.    
+  
+Las coordenadas de las muestras y las categorías de las variables pueden vincularse a esta interpretación de los dos primeros componentes principales a través del segundo gráfico.
+El vino "1DAM" fue evaluado como el más "intenso" y "armonioso", a diferencia de los vinos "1VAU" y "2ING" que son los menos "intensos" y "armoniosos". El segundo eje se debe esencialmente a los vinos "T1" y "T2." Como estos dos vinos fueron de hecho el mismo vino evaluado dos veces por los evaluadores, la segunda dimensión se diseñará como el "caso particular del vino T".  
+
+A continuación se va a hacer el gráfico de las muestras juntamente a las categorías:
+
+```{r}
+plot(res)
+```
+
+Se puede observar como la mayoría de las categorías se situan al origen del gráfico de componentes principales, lo que significa que estas categorías no están relacionadas con la "intensidad", la "armonía" o con los "vinos T". La categoría "Env4" tiene coordenadas altas en el segundo eje, ya que los vinos que pertenecen a esta categoría precisamente son los T1 y T2. La categoría "Referencie", relacionada a priori con un excelente suelo vinícola, tiene coordenadas altas en el primer eje y por lo tanto está positivamente correlacionada con la "intensidad" y la "armonía", lo que confirma lo comentado anteriormente.
+
+
+En el gráfico de las muestras podemos representar los puntos parciales para algunas de ellas:
+
+```{r}
+plot(res, invisible="quali", cex=0.8, partial=c("1VAU","PER1"))
+```
+
+Por defecto, la gráfica proporcionada muestra los puntos parciales de cuatro individuos: los dos individuos con la mayor inercia "dentro" y los dos individuos con la menor inercia "dentro".  
+
+```{r}
+plot(res, invisible="quali", cex=0.8, partial=c("1DAM", "2ING", "1VAU"))
+```
+
+"1DAM" fue evaluado como particularmente "intenso" y "armonioso" especialmente por el grupo de "olores pre-agitación": sus coordenadas en el primer eje son más extremas desde el punto de vista de este grupo que desde el de los otros grupos. Desde el punto de vista del grupo de los olores, "2ING" era más "intenso" y "armonioso" que "1VAU", pero desde el punto de vista del grupo de los "sabores", "1VAU" era más "intenso" y "armonioso" que "2ING".    
+    
+Como en el presente análisis también hay variables cualitativas, se puede obtener un gráfico que muestra las categorías suplementarias y las categorías activas:
+
+```{r}
+plot(res, invisible="ind", cex=0.8, partial=c("all"))
+```
+
+Aquí no aparecen las categorías activas, así que sólo se muestran las suplementarias. Para cada categoría, se muestra el punto medio y sus puntos parciales. Los puntos medios y parciales pueden ser interpretados como para el gráfico de las muestras. Podemos decir, por ejemplo, que los vinos cultivados en el tipo de suelo de referencia ("Reference"), y los del tipo de suelo "Env4", se perciben visualmente de la misma manera, pero son muy diferentes en términos de olor y sabor.    
+
+Por último, tenemos el gráfico que muestra los ejes parciales:
+
+```{r}
+plot(res, choix = "axes", ncp = 5)
+```
+
+Para cada grupo de variables se realizó un análisis: para las variables cuantitativas se hizo un PCA, para las cualitativas un MCA (del inglés "Multiple Correspondance Analysis", una técnica de análisis para datos categóricos), y las dimensiones de estos PCA y MCA se proyectaron como información suplementaria sobre las dimensiones del MFA. Así, por ejemplo, para el grupo visual, la primera dimensión está estrechamente relacionada con la primera dimensión del MFA, mientras que la segunda dimensión está algo menos relacionada con la segunda dimensión del MFA. Para el grupo de variables cualitativas "origen", se proyectan las dimensiones del MCA.    
+
+Este gráfico está diseñado para ver el vínculo entre los principales componentes del MFA y los de cada grupo de variables.
+Excepto por el grupo de origen, la primera dimensión de cada grupo está altamente correlacionada con la primera del MFA.
+La segunda dimensión del MFA está esencialmente correlacionada con la segunda dimensión de los grupos olfativos.
+
+# Personalización de los gráficos
+
+## Gráficos de muestras
+
+A continuación se menciona como modificar y mejorar los gráficos que se obtienen de aplicar el modelo MFA a los datos en estudio.
+
+Por un lado se puede obtener un gráfico con las muestras y las categorías de las variables suplementarias:
+
+```{r}
+plot(res)
+```
+
+sin embargo, también es posible hacer que las categorías sean invisibles:
+
+```{r}
+plot(res, invisible = c("quali.sup"))
+```
+
+También podemos mejorar la legibilidad del gráfico colocando mejor las etiquetas de las muestras. Para ello, por ejemplo, podemos disminuir un poco el tamaño de la fuente, usando el argumento `cex = 0.8`.
+
+```{r}
+plot(res, invisible = c("quali.sup"), cex = 0.8)
+```
+
+A este gráfico también se pueden añadir puntos parciales, por ejemplo para los vinos "1VAU" y "PER1".
+
+```{r}
+plot(res, invisible = c("quali.sup"), cex = 0.8, partial = c("1VAU", "PER1"))
+```
+
+Para el vino de "1VAU", el punto rojo representa cómo se ve en términos de solamente las variables olfativas, y el punto verde muestra cómo se ve en relación solamente con las variables visuales. 
+En el caso que se quieran mostrar únicamente los puntos parciales por un determinado grupo de variables (por ejemplo, el 3r grupo) se puede usar el siguiente código (el primer color "black" se refiere al color de los puntos medios, y luego se definen los colores para cada grupo de variables):
+
+```{r}
+plot(res, invisible = c("quali"), cex = 0.8, partial = c("all"),
+     palette=c("black","transparent","transparent","blue","transparent"))
+```
+
+También es posible resaltar los puntos de un determinado grupo de muestras, por ejemplo aquellas que presentan un cos² > 0.4, donde se muestran en negro las muestras con un cos² > 0.4 y en gris aquellas con un cos² < 0.4:
+
+```{r}
+plot(res, invisible="quali.sup", cex=0.8, select="cos2 0.4")
+```
+
+O también se pueden colorear las muestras según una variable cualitativa:
+
+```{r}
+plot(res, invisible="quali.sup", habillage = "Soil", cex=0.8, select="cos2 0.4")
+```
+
+También es posible seleccionar las muestras según su contribución en el modelo. Por ejemplo, en el siguiente gráfico se muestran únicamente los 5 sujetos que más han contribuido en la construcción de las dimensiones:
+
+```{r}
+plot(res, invisible="quali.sup", habillage="Soil", cex=0.8, select="contrib 5")
+```
+
+En caso que se quieran eliminar por completo los puntos referentes al resto de muestras se puede usar el argumento `unselect = 1`:
+
+```{r}
+plot(res, invisible="quali.sup", habillage="Soil", cex=0.8, select="contrib 5", unselect = 1)
+```
+
+Así que aquí, sólo las muestras que más han contribuido se muestran con puntos coloreados.
+
+O si se quiere obtener un gráfico con todas las muestras coloreadas, pero indicando el nombre de únicamente aquellas que más han contribuido al modelo se puede usar el argumento `unselect = 0`:
+
+```{r}
+plot(res, invisible="quali.sup", habillage="Soil", cex=0.8, select="contrib 5", unselect = 0)
+```
+
+
+Por otro lado, en caso de querer mostrar el gráfico con dimensiones superiores a la segunda, ésto se puede especificar ocn el argumento `axes`:
+
+```{r}
+plot(res, invisible="quali.sup", habillage="Soil", cex=0.8, select="contrib 5", unselect=0, axes=3:4)
+```
+
+En este ejemplo, se observan las dimensiones 3 y 4, mostrando las etiquetas de las muestras que más han contribuido en la construcción de estas dimensiones.  
+  
+Otra opción es especificar para qué muestras exactamente se quieren mostrar sus etiquetas:
+
+```{r}
+plot(res, invisible="quali.sup", habillage="Soil", cex=0.8, select=c("1VAU","PER1"), unselect=0, axes=3:4)
+```
+
+
+## Gráficos de variables
+
+```{r}
+plot(res, choix="var")
+```
+
+Por defecto, las variables se colorean según al grupo al que pertenecen.  
+Como se puede observar, muchas de las etiquetas están superpuestas. Para evitar esto, se pueden añadir sombras bajo las etiquetas usando el argumento `shadow = TRUE`:
+
+```{r}
+plot(res, choix = "var", shadow = TRUE, cex = 0.8)
+```
+
+Al igual que en el caso de las muestras, las variables pueden seleccionarse en función de su contribución, por ejemplo, manteniendo las cinco variables que más contribuyeron a la construcción de las dimensiones.
+
+```{r}
+plot(res, choix = "var", shadow = TRUE, select = "contrib 5", cex = 0.8)
+```
+
+En el gráfico se indican las etiquetas de las cinco variables que más contribuyeron en la construcción de estas dimensiones, mientras que las otras variables se muestran parcialmente transparentes. También se puede observar a qué grupo pertenecen (por el color) y hacia donde están proyectadas. Esto permite obtener gráficos con una menor superposición de las etiquetas. Esto resulta a menudo interesante, ya que la variables cercanas al centro del círculo (es decir, las que tienen flechas muy cortas) no son muy interesantes, porqué están pobremente proyectadas. A menudo nos centraremos en las variables con una mejor proyección, que por lo tanto tienen coordenadas de gran valor o, lo que es lo mismo, han contribuido fuertemente a la construcción de las dimensiones.  
+
+Podemos hacer lo mismo para el plano de las dimensiones 3-4, y por lo tanto tenemos las variables que más han contribuido a la construcción de este plano.
+
+```{r}
+plot(res, choix="var", shadow=TRUE, select="contrib 5", axes=3:4,cex=0.8)
+```
+
+## Otros
+
+También podemos usar la función `dimdesc`, que proporciona una descripción automática de las dimensiones del factor exactamente como lo hace con los resultados de PCA y MCA.
+
+```{r}
+dimdesc(res)
+```
+
+Por lo tanto, la primera dimensión se caracteriza por las variables cuantitativas activas y suplementarias más estrechamente relacionadas -es decir, positiva y negativamente correlacionadas- con la primera dimensión del MFA, y luego por las variables cualitativas y las categorías más relacionadas (por defecto se muestran los datos de las primeras 3 dimensiones).
+
+
+```{r}
+plotellipses(res)
+```
+
+# Session information
+
+```{r session}
+Sys.time()-startpoint
+devtools::session_info()
+```
