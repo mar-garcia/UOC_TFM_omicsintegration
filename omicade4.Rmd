@@ -1,0 +1,175 @@
+---
+title: "omicade4"
+author: "Mar Garcia-Aloy"
+output: 
+  html_document:
+    toc: true
+    number_sections: false
+    toc_float: true
+---
+
+```{r startpoint, include = FALSE}
+startpoint <- Sys.time()
+```
+
+https://www.bioconductor.org/packages/release/bioc/vignettes/omicade4/inst/doc/omicade4.pdf
+
+https://bmcbioinformatics.biomedcentral.com/articles/10.1186/1471-2105-15-162
+
+# Principios del método "MCIA" del paquete "omicade4"
+
+El paquete `omicade4` proporciona funciones para análisis de co-inercia múltiple (MCIA, del inglés "multiple co-inertia analysis") y para la representación gráfica, de manera que la similitud general de los diferentes conjuntos de datos pueda ser fácilmente interpretada.   
+El MCIA es una extención del método CIA que permite el análisis de más de 2 conjuntos de datos ómicos (CIA permite analizar únicamente 2 conjuntos de datos). Se trata de un método de análisis exploratorio que identifica co-relaciones entre múltiples conjuntos de datos de elevada dimensionalidad. Este método se puede aplicar cuando diversos grupos de variables (genes, tránscritos, proteínas) han sido medidas en el mismo conjunto de individuos (líneas celulares, pacientes).  
+Sobre la base de un criterio de optimización de la covarianza, el MCIA proyecta simultáneamente varios conjuntos de datos en el mismo espacio dimensional, transformando diversos conjuntos de características en la misma escala, para extraer la mayor cantidad de variantes de cada conjunto de datos y facilitar la interpretación biológica y el análisis de "pathways".  
+El MCIA se realiza en un proceso de dos pasos. En primer lugar, se aplica a cada conjunto de datos por separado un método de ordenación de una tabla que transforma los datos en espacios comparables de menor dimensionalidad.  
+El segundo paso en MCIA es una generalización del CIA.
+
+
+# Descripción del ejemplo
+
+Se trata de un conjunto de datos llamado `NCI-60` y adquiridos por el Instituto Nacional del Cáncer de los Estados Unidos mediante cuatro plataformas distintas de chips de DNA ("*microarrays*"): Agilent, Affymetrix HGU 95, Affymetrix HGU 133 y Affymetrix HGU 133plus 2.0. El estudio fue desarrollado para evaluar la sensibilidad a una serie de fármacos en 60 líneas celulares humanas de 9 distintos tejidos tumorales: melanomas (ME), leucemias (LE), mama (BR), renal (RE), ovario (OV), sistema nervioso central (SNC), pulmón (LC), próstata (PR) y colon (CO).  
+En este caso nos encontramos con múltiples conjuntos de datos que miden tanto las mismas como distintos moléculas biológicas (genes en este caso). En el primer caso, el objetivo podría ser descubrir cual es la plataforma que está dando más información, identificar biomarcadores robustos en todos los conjuntos de datos o destacar discrepancias en las medidas específicas de una/s determinada/s plataforma/s. En cambio, en el segundo caso, el objetivo podría ser iuntegrar y concatenar información para aumentar la cobertura de los datos disponibles y así poder aborar enfoques más holísticos.  
+
+# Ejecución del ejemplo
+
+## Importación de los datos
+
+```{r}
+library(omicade4)
+data(NCI60_4arrays)
+```
+
+Los datos se encuentran en el objecto `NCI60_4arrays`, que es una lista que contiene los datos de microarrays del NCI-60 con sólo unos pocos cientos de genes seleccionados al azar.  
+Cada elemento de la lista es un "data.frame" con los datos de cada una de las plataformes, donde los genes se ordenan en filas y las muestras (i.e., tejidos tumorales) en columnas.  
+
+## Descripción de los datos
+
+El MCIA vincula a las muestras (en columnas) en diferentes conjuntos de datos y, por lo tanto, las columnas estarán vinculadas entre los múltiples conjuntos de datos. Así pues, tenemos que asegurarnos de que el orden de las columnas en todos los conjuntos de datos es el mismo antes de realizar el MCIA. El número de variables (genes) no tiene por qué ser el mismo.
+
+```{r}
+sapply(NCI60_4arrays, dim)
+all(apply((x <- sapply(NCI60_4arrays, colnames))[,-1], 2, function(y)
+  identical(y, x[,1])))
+
+
+agilent <- data.frame(gens = row.names(NCI60_4arrays[[1]]))
+agilent$agilent <- 1
+
+hgu133 <- data.frame(gens = row.names(NCI60_4arrays[[2]]))
+hgu133$hgu133 <- 1
+
+hgu133p2 <- data.frame(gens = row.names(NCI60_4arrays[[3]]))
+hgu133p2$hgu133p2 <- 1
+
+hgu95 <- data.frame(gens = row.names(NCI60_4arrays[[4]]))
+hgu95$hgu95 <- 1
+
+data <- merge(agilent, hgu133, by = "gens", all = TRUE)
+data <- merge(data, hgu133p2, by = "gens", all = TRUE)
+data <- merge(data, hgu95, by = "gens", all = TRUE)
+rm(agilent, hgu133, hgu133p2, hgu95, x)
+data[is.na(data)] <- 0
+
+library(VennDiagram)
+grid.newpage()
+draw.quad.venn(
+  area1 = sum(data$agilent == 1), 
+  area2 = sum(data$hgu133 == 1), 
+  area3 = sum(data$hgu133p2 == 1), 
+  area4 = sum(data$hgu95 == 1), 
+  n12 = sum(data$agilent == 1 & data$hgu133 == 1), 
+  n13 = sum(data$agilent == 1 & data$hgu133p2 == 1), 
+  n14 = sum(data$agilent == 1 & data$hgu95 == 1), 
+  n23 = sum(data$hgu133 == 1 & data$hgu133p2 == 1), 
+  n24 = sum(data$hgu133 == 1 & data$hgu95 == 1),
+  n34 = sum(data$hgu133p2 == 1 & data$hgu95 == 1), 
+  n123 = sum(data$agilent == 1 & data$hgu133 == 1 & data$hgu133p2 == 1), 
+  n124 = sum(data$agilent == 1 & data$hgu133 == 1 & data$hgu95 == 1), 
+  n134 = sum(data$agilent == 1 & data$hgu133p2 == 1 & data$hgu95 == 1), 
+  n234 = sum(data$hgu133 == 1 & data$hgu133p2 == 1 & data$hgu95 == 1),
+  n1234 = sum(data$agilent == 1 & data$hgu133 == 1 & data$hgu133p2 == 1 & data$hgu95 == 1),
+  category = c("Agilent", "Hgu 133", "Hgu 133 p2", "Hgu 95"),
+  fill = c("#DF536B", "#61D04F", "#2297E6", "#F5C710")
+  )
+```
+
+Tal y como se puede observar en el diagrama de Venn, no hay ningún gen común para las 4 plataformas, pero si que hay algunos genes medidos en almenos 2 plataformas. Por ejemplo, hay un total de 16 genes medidos en las plataformas "Hgu 133 p2" y "Hgu 95", y 13 genes medidos con las plataformas "Agilent" y "Hgu 133", entre otros.  
+
+Antes de realizar el MCIA, podemos utilizar la agrupación jerárquica para tener una idea general sobre la similitud de las líneas celulares.
+
+```{r}
+library(dendextend)
+layout(matrix(1:4, 1, 4))
+par(mar=c(2, 1, 1, 6))
+for (i in 1:length(NCI60_4arrays)) {
+  df <- NCI60_4arrays[[i]]
+  d <- dist(t(df))
+  hcl <- hclust(d)
+  dend <- as.dendrogram(hcl)
+  colors_to_use <- as.numeric(factor(substr(colnames(df), 1, 2)))
+  colors_to_use <- colors_to_use[order.dendrogram(dend)]
+  labels_colors(dend) <- colors_to_use
+  plot(dend, horiz=TRUE, main=names(NCI60_4arrays)[[i]])
+}
+```
+
+## Ejecución del modelo
+
+```{r}
+mcoin <- mcia(NCI60_4arrays, cia.nf=10)
+```
+
+Hay nueve tipos de cáncer, queremos distinguir las líneas celulares por su tipo de cáncer original.
+
+```{r}
+cancer_type <- colnames(NCI60_4arrays$agilent)
+cancer_type <- sapply(strsplit(cancer_type, split="\\."), function(x) x[1])
+
+plot(mcoin, axes=1:2, phenovec=cancer_type, sample.lab=FALSE, df.color=1:4)
+```
+
+El panel superior izquierdo es el espacio de las muestras, donde se proyectan las líneas celulares en los dos primeros componentes principales (PCs) del MCIA. Las formas representan las diferentes plataformas de medición y están conectadas por líneas cuya longitud es proporcional a la divergencia entre los datos de una misma línea celular: cuanto más corta es la línea, mayor es el nivel de concordancia/similitud/correlación de las muestras de las misma línea celular en las diferentes plataformas. Las líneas están unidas por un punto común, el cual representa la estructura de referencia que maximiza la covarianza derivada del análisis sintético del MCIA.   
+Los colores representan las nueve líneas celulares NCI-60 de los distintos tejidos.
+El gráfico del MCIA de los dos primeros componentes principales muestra tendencias similares en los perfiles de las muestras entre las diversas tecnologías, lo que indica que las fuentes de variación de la información biológica eran similares entre las 4 tecnologías.   
+Las líneas celulares originadas en la misma fuente anatómica de tejido o en una fuente estrechamente relacionada con ella se proyectaron cerca unas de otras y convergieron en grupos.
+Además, en la mayoría de los tipos de cáncer, excepto el cáncer de pulmón (LC, azul) y el cáncer de mama (BR, negro), las líneas celulares que tienen el mismo origen están estrechamente proyectados, sobretodo para el melanoma (ME, rosa), leucemia (LE, cyan), y el cáncer de cólon (CO, verde) y sistema nervioso central (CNS, rojo), lo que indica una alta homogeneidad de estos tipos de cáncer. Estos resultados concuerdan con la agrupación jerárquica realizada independentemente (figura anterior).  
+La estrecha proyección de múltiples tipos de datos procedentes de diversas plataformas tecnológicas proporciona evidencia de que la disperción observada de las líneas celulares reflejaba la varianza biológica (heterogeneidad de las líneas celulares tumorales), en contraposición a la varianza técnica entre estudios u otra varianza estocástica.
+
+
+
+La siguiente pregunta interesante es qué genes son los responsables de definir las coordenadas de las muestras. El panel superior derecho es el espacio de las variables (genes), por ejemplo, los genes de diferentes plataformas, que se distinguen por sus colores y formas, se proyectan en este espacio. En este panel, un gen que está particularmente altamente expresado en una cierta línea celular se ubicará en la dirección de esta línea celular. Cuanto más lejos hacia el margen exterior, más fuerte es la asociación. Igualmente, los genes proyectados en la dirección opuesta al origen indican que se pierden o se regulan a la baja en esas líneas celulares. En este sentido, dado que las líneas celulares del melanoma tienen un gran peso en el lado positivo del eje horizontal en el primer panel, el melanoma correspondiente los genes altamente expresados están en la misma dirección. Así pues, a continuación vamos a seleccionar los genes asociados al melanoma según la coordenada de los genes en ese espacio:
+
+```{r}
+(melan_gene <- selectVar(mcoin, a1.lim=c(2, Inf), a2.lim=c(-Inf, Inf)))
+```
+
+La primera columna representa los nombres de los genes, mientras que las siguientes columnas indican qué genes se identifican en qué plataformas, y la última columna es una estadística del número total de plataformas que identifican el gen correspondiente en la región seleccionada.  
+  
+El panel inferior izquierdo de la figura principal generada por el modelo MCIA muestra el "eigenvalue" de cada "eigenvector". Cada PC tiene un "eigenvalue" asociado que representa la cantidad de variabilidad contenida en ese PC. El diagrama de barras representa los "eigenvalues" absolutos. Los puntos unidos por líneas indican la proporción de varianza para los "eigenvectors". Las barras azules indican los "eigenvectors" que se mantienen en el análisis. En este caso, mantuvimos 10 "eigenvectors", y los tres primeros ejes tienen un "eigenvalue" relativamente grande de acuerdo con el diagrama de barras. Por lo tanto, no sólo los dos primeros ejes, sino también el tercero podría llevar a algunos hallazgos interesantes. Así pues, vamos también a observar los datos en el 3r eje:
+
+```{r}
+plot(mcoin, axes=c(1, 3), phenovec=cancer_type, sample.lab=FALSE, df.color=1:4)
+plot(mcoin, axes=c(2, 3), phenovec=cancer_type, sample.lab=FALSE, df.color=1:4)
+```
+
+- Eje 1 separa "ME" del resto de muestras  
+- Eje 2 separa "LE" del resto de muestras  
+- Eje 3 separa "LE" de "CO"  
+  
+Por último, el panel inferior derecho de la figura principal muestra el espacio de "pseudo-eigenvalues" de todos los conjuntos de datos, lo que indica cuánta varianza de un "eigenvalue" contribuye cada conjunto de datos. Es decir, es un resumen de la concordancia entre las distintas plataformas usadas (i.e., conjuntos de datos). El espacio de "pseudo-eigenvalues" representa la co-estructura general entre los conjuntos de datos y muestra qué plataforma contribuye más a la varianza total.     
+En este ejemplo, el HGU 95 tiene un elevado peso en el primer eje. Por lo tanto, este conjunto de datos aporta la mayor varianza en este eje entre los cuatro conjuntos de datos. Obsérvese que seleccionamos algunos genes relacionados con el melanoma limitando el primer eje mediante la función `SelectVar`, donde identificamos cuatro genes en las plataformas Agilent y HGU 95 en comparación con sólo un gen en la plataforma HGU 133 plus 2.0, lo que concuerda con el resultado.    
+Sin embargo, los datos del HGU 133 plus 2.0 contribuyen en gran medida al segundo eje.  
+  
+Además, la función `plotVar` podría utilizarse para visualizar el espacio genético, dada una lista de genes de interés. Volvamos a los genes del melanoma de nuevo, sabemos que el "S100B" y el "S100A1" se detectan en más de un conjunto de datos. Ahora, queremos saber dónde se proyectan estos genes en el espacio genético.
+
+```{r}
+geneStat <- plotVar(mcoin, var=c("S100B", "S100A1"), var.lab=TRUE)
+```
+
+
+# Session information
+
+```{r session}
+Sys.time()-startpoint
+devtools::session_info()
+```
