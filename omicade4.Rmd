@@ -34,7 +34,9 @@ En este caso nos encontramos con múltiples conjuntos de datos que miden tanto l
 
 ## Importación de los datos
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
+library(VennDiagram)
+library(dendextend)
 library(omicade4)
 data(NCI60_4arrays)
 ```
@@ -70,7 +72,6 @@ data <- merge(data, hgu95, by = "gens", all = TRUE)
 rm(agilent, hgu133, hgu133p2, hgu95, x)
 data[is.na(data)] <- 0
 
-library(VennDiagram)
 grid.newpage()
 draw.quad.venn(
   area1 = sum(data$agilent == 1), 
@@ -98,7 +99,6 @@ Tal y como se puede observar en el diagrama de Venn, no hay ningún gen común p
 Antes de realizar el MCIA, podemos utilizar la agrupación jerárquica para tener una idea general sobre la similitud de las líneas celulares.
 
 ```{r}
-library(dendextend)
 layout(matrix(1:4, 1, 4))
 par(mar=c(2, 1, 1, 6))
 for (i in 1:length(NCI60_4arrays)) {
@@ -135,9 +135,10 @@ Las líneas celulares originadas en la misma fuente anatómica de tejido o en un
 Además, en la mayoría de los tipos de cáncer, excepto el cáncer de pulmón (LC, azul) y el cáncer de mama (BR, negro), las líneas celulares que tienen el mismo origen están estrechamente proyectados, sobretodo para el melanoma (ME, rosa), leucemia (LE, cyan), y el cáncer de cólon (CO, verde) y sistema nervioso central (CNS, rojo), lo que indica una alta homogeneidad de estos tipos de cáncer. Estos resultados concuerdan con la agrupación jerárquica realizada independentemente (figura anterior).  
 La estrecha proyección de múltiples tipos de datos procedentes de diversas plataformas tecnológicas proporciona evidencia de que la disperción observada de las líneas celulares reflejaba la varianza biológica (heterogeneidad de las líneas celulares tumorales), en contraposición a la varianza técnica entre estudios u otra varianza estocástica.
 
+El primer eje (PC1, eje horizontal), que explica la mayor variación, separó claramente el melanoma de otros tipos de cáncer, mientras que el segundo eje (vertical), el PC2, separaba la leucemia de otros tipos de cáncer. 
 
 
-La siguiente pregunta interesante es qué genes son los responsables de definir las coordenadas de las muestras. El panel superior derecho es el espacio de las variables (genes), por ejemplo, los genes de diferentes plataformas, que se distinguen por sus colores y formas, se proyectan en este espacio. En este panel, un gen que está particularmente altamente expresado en una cierta línea celular se ubicará en la dirección de esta línea celular. Cuanto más lejos hacia el margen exterior, más fuerte es la asociación. Igualmente, los genes proyectados en la dirección opuesta al origen indican que se pierden o se regulan a la baja en esas líneas celulares. En este sentido, dado que las líneas celulares del melanoma tienen un gran peso en el lado positivo del eje horizontal en el primer panel, el melanoma correspondiente los genes altamente expresados están en la misma dirección. Así pues, a continuación vamos a seleccionar los genes asociados al melanoma según la coordenada de los genes en ese espacio:
+La siguiente pregunta interesante es qué genes son los responsables de definir las coordenadas de las muestras. El panel superior derecho es el espacio de las variables (genes), por ejemplo, los genes de diferentes plataformas, que se distinguen por sus colores y formas, se proyectan en este espacio. En este panel, un gen que está particularmente altamente expresado en una determinada línea celular se ubicará en la dirección de esta línea celular. Cuanto más lejos hacia el margen exterior (o lo que es lo mismo, cuanto mayor sea la distancia del origen), más fuerte es la asociación. Igualmente, los genes proyectados en la dirección opuesta al origen indican que se pierden o se regulan a la baja en esas líneas celulares. En este sentido, dado que las líneas celulares del melanoma tienen un gran peso en el lado positivo del eje horizontal en el primer panel, el melanoma correspondiente los genes altamente expresados están en la misma dirección. Así pues, a continuación vamos a seleccionar los genes asociados al melanoma según la coordenada de los genes en ese espacio:
 
 ```{r}
 (melan_gene <- selectVar(mcoin, a1.lim=c(2, Inf), a2.lim=c(-Inf, Inf)))
@@ -145,7 +146,8 @@ La siguiente pregunta interesante es qué genes son los responsables de definir 
 
 La primera columna representa los nombres de los genes, mientras que las siguientes columnas indican qué genes se identifican en qué plataformas, y la última columna es una estadística del número total de plataformas que identifican el gen correspondiente en la región seleccionada.  
   
-El panel inferior izquierdo de la figura principal generada por el modelo MCIA muestra el "eigenvalue" de cada "eigenvector". Cada PC tiene un "eigenvalue" asociado que representa la cantidad de variabilidad contenida en ese PC. El diagrama de barras representa los "eigenvalues" absolutos. Los puntos unidos por líneas indican la proporción de varianza para los "eigenvectors". Las barras azules indican los "eigenvectors" que se mantienen en el análisis. En este caso, mantuvimos 10 "eigenvectors", y los tres primeros ejes tienen un "eigenvalue" relativamente grande de acuerdo con el diagrama de barras. Por lo tanto, no sólo los dos primeros ejes, sino también el tercero podría llevar a algunos hallazgos interesantes. Así pues, vamos también a observar los datos en el 3r eje:
+El panel inferior izquierdo de la figura principal generada por el modelo MCIA muestra el "eigenvalue" de cada "eigenvector". Cada PC tiene un "eigenvalue" asociado que representa la cantidad de variabilidad contenida en ese PC. Los primeros tres PCs del MCI representaron el `r round((mcoin$mcoa$pseudoeig[1]/sum(mcoin$mcoa$pseudoeig))*100,1)`%, `r round((mcoin$mcoa$pseudoeig[2]/sum(mcoin$mcoa$pseudoeig))*100,1)`% y `r round((mcoin$mcoa$pseudoeig[3]/sum(mcoin$mcoa$pseudoeig))*100,1)`% de la variación, respectivamente.
+El diagrama de barras representa los "eigenvalues" absolutos. Los puntos unidos por líneas indican la proporción de varianza para los "eigenvectors". Las barras azules indican los "eigenvectors" que se mantienen en el análisis. En este caso, mantuvimos 10 "eigenvectors", y los tres primeros ejes tienen un "eigenvalue" relativamente grande de acuerdo con el diagrama de barras. Por lo tanto, no sólo los dos primeros ejes, sino también el tercero podría llevar a algunos hallazgos interesantes. Así pues, vamos también a observar los datos en el 3r eje:
 
 ```{r}
 plot(mcoin, axes=c(1, 3), phenovec=cancer_type, sample.lab=FALSE, df.color=1:4)
@@ -156,10 +158,12 @@ plot(mcoin, axes=c(2, 3), phenovec=cancer_type, sample.lab=FALSE, df.color=1:4)
 - Eje 2 separa "LE" del resto de muestras  
 - Eje 3 separa "LE" de "CO"  
   
-Por último, el panel inferior derecho de la figura principal muestra el espacio de "pseudo-eigenvalues" de todos los conjuntos de datos, lo que indica cuánta varianza de un "eigenvalue" contribuye cada conjunto de datos. Es decir, es un resumen de la concordancia entre las distintas plataformas usadas (i.e., conjuntos de datos). El espacio de "pseudo-eigenvalues" representa la co-estructura general entre los conjuntos de datos y muestra qué plataforma contribuye más a la varianza total.     
+Por último, el panel inferior derecho de la figura principal muestra el espacio de "pseudo-eigenvalues" de todos los conjuntos de datos, lo que permite identificar la contribución de cada conjunto de datos a la varianza total, es decir, en qué medida cada conjunto de datos se desvía o está de acuerdo con lo que la mayoría de los conjuntos de datos apoyan. 
+Es decir, es un resumen de la concordancia entre las distintas plataformas usadas (i.e., conjuntos de datos). El espacio de "pseudo-eigenvalues" representa la co-estructura general entre los conjuntos de datos y muestra qué plataforma contribuye más a la varianza total.     
 En este ejemplo, el HGU 95 tiene un elevado peso en el primer eje. Por lo tanto, este conjunto de datos aporta la mayor varianza en este eje entre los cuatro conjuntos de datos. Obsérvese que seleccionamos algunos genes relacionados con el melanoma limitando el primer eje mediante la función `SelectVar`, donde identificamos cuatro genes en las plataformas Agilent y HGU 95 en comparación con sólo un gen en la plataforma HGU 133 plus 2.0, lo que concuerda con el resultado.    
 Sin embargo, los datos del HGU 133 plus 2.0 contribuyen en gran medida al segundo eje.  
-  
+
+
 Además, la función `plotVar` podría utilizarse para visualizar el espacio genético, dada una lista de genes de interés. Volvamos a los genes del melanoma de nuevo, sabemos que el "S100B" y el "S100A1" se detectan en más de un conjunto de datos. Ahora, queremos saber dónde se proyectan estos genes en el espacio genético.
 
 ```{r}
