@@ -271,6 +271,111 @@ fviz_ellipses(res.mfa, 1:2, geom = "point")
 
 # MCIA (omicade4)
 
+El MCIA es aplicado a una lista de "data frames", donde las muestras se situan en las columnas, siempre colocadas en el mismo orden. Así pues, en primer lugar se va generar un nuevo objeto con estas características.
+
+```{r}
+wine.list <- list(
+  #origin = data.frame(t(wine[,1:2])),
+  odor_pre = data.frame(t(scale(wine[,3:7]))),
+  odor_post = data.frame(t(scale(wine[,11:20]))),
+  visual = data.frame(t(scale(wine[,8:10]))),
+  taste = data.frame(t(scale(wine[,21:29])))#,
+  #overall = data.frame(t(wine[,30:31]))
+)
+
+sapply(wine.list, dim)
+all(apply((x <- sapply(wine.list, colnames))[,-1], 2, function(y)
+    identical(y, x[,1])))
+
+res.mcia <- mcia(wine.list, cia.nf = 2)
+plot.mcia(res.mcia, phenovec = wine$Soil, df.color = 1:4, gene.nlab = 5)
+```
+
+## "Eigenvalues" / Varianzas
+
+```{r}
+eig <- data.frame(
+  eigenvalue = res.mcia$mcoa$pseudoeig,
+  "percentage of variance" = res.mcia$mcoa$pseudoeig/sum(res.mcia$mcoa$pseudoeig)*100,
+  "cumulative percentage of variance" = NA)
+for(i in 1:nrow(eig)){
+  eig[i,3] <- sum(eig[1:i,2])
+}
+eig[c(1:5, (nrow(eig)-2):nrow(eig)),] %>%
+  kbl() %>%
+  kable_minimal()
+barplot(eig[,2])
+```
+
+En este caso la primera dimensión cubre una mayor proporción de la variabilidad (59%, confronte al 49% observado en el modelo MFA), mientras que las dimensiones posteriores cubren un procentage similar de la variabilidad.  
+
+## Variables
+
+### Variables agrupadas
+
+```{r}
+plot(res.mcia$mcoa$cov2$cov21, res.mcia$mcoa$cov2$cov22, xlim = c(0,max(max(res.mcia$mcoa$cov2$cov21))+0.1), ylim = c(0,max(res.mcia$mcoa$cov2$cov22)+0.1), col = 1:4, pch=16,
+     xlab = "pseudoeig 1", ylab = "pseudoeig 2")
+grid()
+abline(v=0, lty = 2)
+abline(h=0, lty = 2)
+text(res.mcia$mcoa$cov2$cov21, res.mcia$mcoa$cov2$cov22, rownames(res.mcia$mcoa$cov2), pos = 1, col = 1:4, cex = 0.8)
+```
+
+En este caso obtenemos un resultado similar al observado con el modelo MFA: todos los grupos de variables obtienen unas coordenadas bastantes similares en la primera dimensión, mientras que para la segunda dimensión son los grupos de variables "olor pre-agitación" y "olor post-agitación" las que presentan unas mayores coordenadas, siendo el grupo de variables "visual" aquel que prácticamente no ejerce ninguna influencia en esta dimensión.  
+A diferencia del MFA, en este caso no se permite proyectar en el gráfico donde se situarían los grupos de variables desriptivos (en este caso el grupo de variables "origen", formado por la variable "origen de los vinos" y la variable "tipo de suelo", y el grupo de variables "apreciación de la degustación", compuesto por las variables "calidad general" y "típico").  
+
+
+Este paquete también permite calcular el coeficiente "RV" para cada par de conjuntos de datos, el cual se acerca a 1 a medida que la co-estructura entre 2 conjuntos de datos incrementa (un coeficiente "RV" igual a 0 indica no similaridad). Así pues, se observa los dos conjuntos de datos con una mayor similitud estructural son aquellos que incluyen las variables relacionados con el oflato pre- y post-agitación, lo cual es bastante lógico.
+
+```{r}
+res.mcia$mcoa$RV %>%
+  kbl() %>%
+  kable_minimal()
+``` 
+
+
+### Variables cuantitativas individuales
+
+```{r}
+plot(res.mcia$mcoa$Tco$SV1, res.mcia$mcoa$Tco$SV2, col = c(rep(1, 5), rep(2, 10), rep(3, 3), rep(4, 9)), pch = 16,
+     xlab = paste0("Dim 1 (", round(eig[1,2], 2), "%)"),
+     ylab = paste0("Dim 2 (", round(eig[2,2], 2), "%)"))
+grid()
+abline(v=0, lty = 2)
+abline(h=0, lty = 2)
+text(res.mcia$mcoa$Tco$SV1, res.mcia$mcoa$Tco$SV2, rownames(res.mcia$mcoa$axis),pos = 1, cex = 0.5)
+legend("topleft", col = 1:4, pch = 16, legend = names(wine.list))
+```
+
+En este punto ya se observan diferencias más acentuadas en los resultados obtenidos.  
+Por ejemplo, las variables con un mayor peso en la segunda dimensión son la florabilidad pre- y post-agiración, lo que estaría indicando que la segunda dimensión representa esencialmente la percepción de un aroma floral tanto antes como después de la agitación.  
+Respeto a la primera dimensión, parece que todas las variables se distribuyen de una forma más uniforme a lo largo de la misma, aunque si aquellas variables que parecen estar más correlacionas con la primera dimensión serían "sensación superficial" (del grupo de variables que hacen referencia a la percepción visual) con una correlación positiva, mientras que con una correlación negativa estarían las características de "olor vegetal post-agitación", "picante pre-agitación" y "sabor acido".
+
+## Muestras
+
+```{r}
+plot(res.mcia$mcoa$SynVar$SynVar1, res.mcia$mcoa$SynVar$SynVar2, col = wine$Soil, pch = 16,
+     xlab = paste0("Dim 1 (", round(eig[1,2], 2), "%)"),
+     ylab = paste0("Dim 2 (", round(eig[2,2], 2), "%)"))
+grid()
+abline(v=0, lty = 2)
+abline(h=0, lty = 2)
+text(res.mcia$mcoa$SynVar$SynVar1, res.mcia$mcoa$SynVar$SynVar2, rownames(res.mcia$mcoa$SynVar), pos = 1, cex = 0.8)
+legend("topleft", col = 1:4, legend = levels(wine$Soil), pch = 16)
+```
+
+De nuevo se observa una distribución de las muestras bastante distinta a aquella obtenida al aplicar el algoritmo del `MFA`.   
+Aun así, lo que sí se puede observar es que en el cuadrante inferior-izquierdo se situan las muestras "T1" y "T2". En este mismo cuadrante del gráfico de las variables se situan las características "Odor.intensity.before.shaking", "Spice", "Bitterness", "Odor.intensity" y "Astringency", las cuales también se situaban en el mismo cuadrante que las muestras "T1" y "T2" en el `MFA`.  
+Addicionalmente, también se observa que justamente las variables "Plantae" y "Acidity" eran aquellas con una correlación negativa en la primera dimensión. Las muestras situadas en el extremo izquierdo del gráfico eran "1VAU" y "2ING". Con el algoritmo `MCIA` ambas muestras se situan en el cuadrante superior-izquierdo,, justamente donde también se situan las dos variables mencionadas.  
+  
+
+# Conclusiones
+
+- `MFA` permite agregar información de variables descriptivas no usadas para la construcción del modelo, mientras que esta opción no está disponible con `MCIA`.  
+- El % de varianza capturado por las distintas dimensiones es bastante similar entre los distintos algoritmos, así como el peso de los distintos grupos de variables en las dos primeras dimensiones (que son las que engloban hasta un 70-80% de la variabilidad total).   
+- La interpretación de los resultados más específica no es extremadamente homogénea. Esto podría ser a que el conjunto de datos no presenta unas fuentes de variabilidad muy importantes. La mayor a lo mejor podría ser la asociada con las muestras "T1" y "T2", las cuales de hecho se trata del mismo vino evaluado dos veces por los evaluadores. Parece que para las muestras más extremas sí que hay coincidencia (T1-T2 y 1VAU-2ING).
+
 # Session information
 
 ```{r session}
