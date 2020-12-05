@@ -1,0 +1,279 @@
+---
+title: "Wines"
+author: "Mar Garcia-Aloy"
+output: 
+  html_document:
+    toc: true
+    number_sections: false
+    toc_float: true
+---
+
+```{r startpoint, include = FALSE}
+startpoint <- Sys.time()
+```
+
+# Descripción del ejemplo 
+
+En este documento voy a aplicar los algoritmos DIABLO (del paquete `mixOmics`), MFA (del paquete `FactoMineR`) y MCIA (del paquete `omicade4`) al conjunto de datos de demostración proporcionado por el algoritmo MFA del paquete `FactoMineR`.  
+Se trata de un conjunto de datos en el que 21 vinos fueron descritos mediante 2 variables cualitativas [referentes al origen de los vinos (*"Label"*) y al tipo de suelo en el que la uva fue cultivada (*"Soil"*)] y 29 variables cuantitativas (referentes a diversos parámetros sensoriales).  
+Las variables cuantitativas derivan de una evaluación sensorial de los vinos realizada por diferentes jueces.  
+
+En primer lugar vamos a cargar las librerías `mixOmics`, `FactoMineR`, `factoextra` (se va a usar para la visualización de los datos) y `omicade4` y a continuación vamos a importar el conjunto de datos "wine":  
+
+```{r, message=FALSE, warning=FALSE}
+library(mixOmics)
+library(FactoMineR)
+library(factoextra)
+library(omicade4)
+
+library(kableExtra)
+library(dplyr)
+
+data(wine)
+dim(wine)
+
+wine %>%
+  kbl() %>%
+  kable_minimal()
+```
+
+Las variables cualitativas se distribuyen de la siguiente forma:
+
+```{r, echo=FALSE}
+table(wine$Label) %>%
+  kbl(caption = "Origen de los vinos") %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+table(wine$Soil) %>%
+  kbl(caption = "Tipo de suelo") %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+```
+
+En paralelo, las variables cuantitativas se agrupan en 5 categorías:  
+  
+- **Olores pre-agitación** (v = 5):   
+    * *“Odor.Intensity.before.shaking”* (intensidad del olor)  
+    * *“Aroma.quality.before.shaking”* (calidad del aroma)  
+    * *“Fruity.before.shaking”* (frutabilidad)  
+    * *“Flower.before.shaking”* (florabilidad)   
+    * *“Spice.before.shaking”* (picante)    
+
+- **Olores post-agitación** (v = 10):    
+    * *“Odor.Intensity”* (intensidad del olor)   
+    * *“Quality.of.odour”* (calidad del olor)   
+    * *“Fruity”* (frutabilidad)  
+    * *“Flower”* (florabilidad)   
+    * *“Spice”* (picante)   
+    * *“Plante”* (plantas)   
+    * *“Phenolic”* (fenólico)   
+    * *“Aroma.intensity”* (intensidad del aroma)   
+    * *“Aroma.persistency”* (persistencia del aroma)   
+    * *“Aroma.quality”* (calidad del aroma) 
+    
+- **Percepciones visuales** (v = 3):   
+    * *“Visual.intensity”* (intensidad visual)   
+    * *“Nuance”* (matiz)   
+    * *“Surface.feeling”* (sensación superficial)    
+    
+- **Variables de sabor** (v = 9): 
+    * *“Attack.intensity”* (intensidad en boca)  
+    * *“Acidity”* (acidez)  
+    * *“Astringency”* (astringencia)  
+    * *“Alcohol”* (alcohol)  
+    * *“Balance”* (equilibrio)   
+    * *“Smooth”* (suavidad)  
+    * *“Bitterness”* (amargura)   
+    * *“Intensity”* (intensidad)   
+    * *“Harmony”* (harmonía)    
+    
+- **Apreciación de la degustación** (v = 2):   
+    * *“Overall.quality”* (calidad general)   
+    * *“Typical”* (típico)  
+
+El valor que se indica de cada una de las características sensoriales para cada vino se refiere a la media obtenida entre todos los jueces que lo valoraron.  
+  
+# Objetivo
+
+El objetivo que se persigue con este conjunto de datos es analizar las características de los vinos según la evaluación sensorial.
+
+
+# DIABLO (mixomics)
+
+# MFA (FactorMiner)
+
+El MFA permite la categorización de las variables como activas o suplementarias. Las variables activas son aquellas variables que se incluyen en el análisis, mientras que las variables suplementarias no. Estas últimas se utilizan para añadir información adicional en los gráficos generados por el modelo con la finalidad de poder entender mejor los datos.  
+Así pues, los grupos de "olores pre-agitación", "olores post-agitación", "percepciones visuales" y "variables de sabor" se consideran variables activas, mientras que los grupos de "origen del vino", "tipo de suelo" (ambas agrupadas en la cateogría de variables llamada "origen") y "apreciación de la degustación" se consideran variables suplementarias.
+
+```{r}
+res.mfa <- MFA(wine, 
+               group = c(2, 5, 3, 10, 9, 2), 
+               type = c("n", "s", "s", "s", "s", "s"),
+               ncp = 2,
+               name.group = c("origin","odor.pre","visual",
+                              "odor.post", "taste", "overall"),
+               num.group.sup = c(1, 6),
+               graph = FALSE)
+```
+
+## "Eigenvalues" / Varianzas
+
+La proporción de las varianzas retenidas para cada una de las dimensiones es:
+
+```{r}
+res.mfa$eig[c(1:5, (nrow(res.mfa$eig)-2):nrow(res.mfa$eig)),] %>%
+  kbl() %>%
+  kable_minimal()
+fviz_screeplot(res.mfa)
+```
+
+La primera cubre el `r round(res.mfa$eig[1,2])`% de la información, y la segunda dimensión, el `r round(res.mfa$eig[2,2])`%.
+
+## Variables
+
+### Variables agrupadas
+
+```{r}
+plot(res.mfa, choix="group")
+```
+
+Este gráfico ilustra la correlación entre las dimensiones y los grupos de variables, con triángulos sólidos para los grupos activos, y triángulos vacíos para los grupos suplementarios.   
+Las coordenadas de los cuatro grupos activos en la primera dimensión son muy parecidas. Esto significa que contribuyen de manera similar a la primera dimensión.    
+En cuanto a la segunda dimensión, los dos grupos "olor pre-agitación" y "olor post-agitación" tienen las coordenadas más altas, lo que indica una mayor contribución de estas variables a la segunda dimensión.  
+Otra forma de visualizar la contribución de cada grupo de variables en cada una de las dimensiones es mediante los siguientes gráficos de barras:
+
+```{r}
+fviz_contrib(res.mfa, "group", axes = 1)
+fviz_contrib(res.mfa, "group", axes = 2)
+```
+
+La línea discontínua roja indica el valor medio esperado en el caso que las contribuciones fueran uniformes.
+
+### Variables cuantitativas individuales
+
+A continuación se van a destacar aquellas variables cuantitativas (coloreadas según al grupo al que pertenecen) que más contribuyen a cada una de las dimensiones mediante 2 tipos de gráficos: el círculo de correlaciones (donde se proyectan las variables cuantitativas para observar tanto las relaciones entre las mismas como su correlación con cada una de las dimensiones) y el gráfico de barras en el que se indica la contribución (en %) de cada una de las variables cuantitativas en la definición de cada una de las dimensiones.
+
+```{r}
+fviz_mfa_var(res.mfa, "quanti.var", palette = "jco", 
+             col.var.sup = "violet", repel = TRUE,
+             geom = c("point", "text"), legend = "bottom")
+fviz_contrib(res.mfa, choice = "quanti.var", axes = 1, top = 20,
+             palette = "jco")
+fviz_contrib(res.mfa, choice = "quanti.var", axes = 2, top = 20,
+             palette = "jco")
+```
+
+De nuevo, el círculo de correlaciones muestra que la mayoría de las variables están altamente correlacionas con la primera dimensión.  
+
+Se observa como la primera dimensión representa los sentimientos positivos sobre los vinos: "intensidad" y "armonía" (nociones positivas que se utilizan comúnmente cuando se habla de vinos), mientras que las variables más correlacionadas con la segunda dimensión son: picante e intensidad del olor antes de la agitación; picante, planta e intensidad del olor tras la agitación; y amargura para el grupo variables de sabor. Así pues, parece que esta segunda dimensión representa esencialmente la "picantez", la característica vegetal y la intensidad a nivel olfativo, así como la amargura a nivel gustativo.  
+  
+En el círculo de correlaciones también se incluyen las variables cuantitativas suplementarias ("calidad general" y "típico", ambas agrupadas en la categoría "apreciación de la degustación"), las cuales se indican con el color rosa.
+
+También se pueden destacar las variables cuantitativas que más contribuyen a una determinada dimensión mediante el color:
+
+```{r}
+fviz_mfa_var(res.mfa, "quanti.var", col.var = "contrib", 
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"), 
+             col.var.sup = "violet", repel = TRUE,
+             geom = c("point", "text"))
+```
+
+### Gráfico de ejes parciales
+
+Este gráfico está diseñado para ver el vínculo entre los principales componentes del MFA y los de cada grupo de variables. Para cada grupo de variables se realizó un análisis: para las variables cuantitativas se hizo un PCA, para las cualitativas un MCA (del inglés “Multiple Correspondance Analysis”, una técnica de análisis para datos categóricos), y las dimensiones de estos PCA y MCA se proyectaron como información suplementaria sobre las dimensiones del MFA. 
+
+```{r}
+fviz_mfa_axes(res.mfa)
+```
+
+Se puede ver que, excepto por el grupo de variables "origen", la primera dimensión de cada grupo de variables está altamente correlacionada con la primera del MFA. La segunda dimensión del MFA está esencialmente correlacionada con la segunda dimensión de los grupos olfativos. 
+
+### Gráfico de las categorías activas y suplementarias
+
+```{r}
+plot(res.mfa, invisible="ind", cex=0.8, partial=c("all"))
+```
+
+En este gráfico se muestra el punto medio para cada categoría suplementaria, así como sus puntos parcialas para las categorías activas.   
+Podemos decir, por ejemplo, que los vinos cultivados en el tipo de suelo de referencia (`Reference`), y los del tipo de suelo `Env4`, se perciben visualmente de la misma manera, pero son muy diferentes en términos de olor y sabor.
+
+
+## Muestras
+
+Ahora vamos a obtener un gráfico que indica la media de cada muestra, es decir, las muestras vistas por todos los grupos de variables activas a la vez:
+
+```{r}
+plot(res.mfa, choix="ind", invisible = c("quali.sup"), cex = 0.8)
+```
+
+Los individuos con perfiles similares están cerca unos de otros en el mapa factorial. El primer eje principalmente separa el vino `1DAM` de los vinos `1VAU` y `2ING`. Como se describió en la sección anterior, la primera dimensión representa la armonía y la intensidad de los vinos. Así, el vino `1DAM` (coordenadas positivas) fue evaluado como el más "intenso" y "armonioso", en contraposición a los vinos `1VAU` y `2ING` (coordenadas negativas) que son los menos "intensos" y "armoniosos".   
+El segundo eje se asocia esencialmente a los dos vinos `T1` y `T2` caracterizados por un valor fuerte de las variables "Especie pre-agitación" e "Intensidad del olor pre-agitación". De hecho estos dos vinos fueron el mismo vino evaluado dos veces por los evaluadores, así que también estaría indicando una correlación postiva (como cabría esperar en caso de estar frento a una evaluación objetiva) en las evaluaciones obtenidas para el mismo vino.    
+
+  
+También se pueden añadir en el gráfico las categorías de las variables suplementarias (recordar que  *Env1*, *Env2*, *Env4* y *Reference* son las categorías del suelo; mientras que *Saumur*, *Bourgueuil* y *Chinon* son las categorías de la etiqueta del vino):
+
+```{r}
+plot(res.mfa, choix="ind", cex = 0.8)
+```
+
+La mayoría de las categorías de variables cualitativas suplementarias están cerca del origen del gráfico. Este resultado indica que las categorías en cuestión no están relacionadas ni con el primer eje (intensidad y armonía del vino) ni con el segundo eje (vino T1 y T2, picantez, intensidad del olor y planta).   
+Para este tipo de variables el modelo proporciona un valor de prueba denominada `v.test`, el cual indica si el valor de las coordenadas de una categoría es significativamente diferente de cero, o no. Más precisamente, el valor de prueba corresponde a la transformación de un valor p en un cuantil de la distribución normal. Si el valor p es inferior al 5%, entonces el valor absoluto del valor de prueba será mayor que 1.96. El signo del valor de la prueba indica si el valor de la coordenada de la categoría es inferior (signo negativo) o superior (signo positivo) a 0. 
+  
+```{r}
+color1 <- abs(res.mfa$quali.var.sup$v.test[,1]) >= 1.96
+color2 <- abs(res.mfa$quali.var.sup$v.test[,2]) >= 1.96
+
+df <- data.frame(res.mfa$quali.var.sup$v.test)
+df <- round(df, 3)
+df %>% 
+  mutate(
+    class = row.names(.),
+    Dim1 = cell_spec(Dim.1, "html", background = ifelse(color1, "red", "")),
+    Dim2 = cell_spec(Dim.2, "html", background = ifelse(color2, "red", ""))
+  ) %>% 
+  select(class, Dim1, Dim2) %>%
+  kable(format = "html", escape = F) %>%
+  kable_styling("striped", full_width = F)
+```
+
+Observamos como las categorías `Referencia` y `Env4` tienen un valor de coordenadas significativamente diferente a 0 en la 1ª y en la 2ª dimensión, respectivamente. En ambos casos, los valores son superiores a 0, lo que indica que ambas categorías están relacionadas de forma positiva con las dimensiones.
+
+La categoría `Env4` tiene coordenadas altas en el segundo eje relacionadas con `T1` y `T2`. Se trata de un resultado esperado, ya que esta categoría únicamente está compuesta por los vinos T1 y T2.
+
+Se sabe que la categoría `Referencia` está relacionada con un excelente suelo vinícola. Como era de esperar, nuestro análisis demuestra que la categoría "Referencia" tiene altas coordenadas en el primer eje, lo que se correlaciona positivamente con la "intensidad" y la "armonía" de los vinos.  
+   
+
+### Gráfico de muestras parciales
+
+Los resultados de las muestras obtenidos del análisis realizado con un solo grupo de variables se denominan "muestras parciales". En otras palabras, una muestra considerada desde el punto de vista de un solo grupo de variables se denomina muestra parcial. Así pues, para cada muestra, hay tantos puntos parciales como grupos de variables.
+
+```{r}
+fviz_mfa_ind(res.mfa, partial = "all") 
+fviz_mfa_ind(res.mfa, partial = c("1DAM", "1VAU", "2ING")) 
+```
+
+En este caso, el color verde representa los vinos vistos sólo por las variables de olor pre-agitación; el color violeta representa los vinos vistos sólo por las variables visuales, y así sucesivamente.  
+  
+El vino `1DAM`, que en la sección anterior ha sido descrito como particularmente "intenso" y "armonioso", en particular por el grupo de olores pre-agitación, cuyas coordenas en el primer eje son más altas en comparación con el punto de vista de los otros grupos de variables.  
+
+Desde el punto de vista del grupo de olores, `2ING` era más "intenso" y "armonioso" que `1VAU`, pero desde el punto de vista del grupo de sabores, `1VAU` era más "intenso" y "armonioso" que `2ING`.
+   
+### Otros gráficos de muestras
+
+```{r}
+fviz_mfa_ind(res.mfa, 
+             habillage = "Label", # color by groups 
+             palette = c("#00AFBB", "#E7B800", "#FC4E07"),
+             addEllipses = TRUE, ellipse.type = "confidence", 
+             repel = TRUE # Avoid text overlapping
+             ) 
+fviz_ellipses(res.mfa, c("Label", "Soil"), repel = TRUE)
+fviz_ellipses(res.mfa, 1:2, geom = "point")
+```
+
+# MCIA (omicade4)
+
+# Session information
+
+```{r session}
+Sys.time()-startpoint
+devtools::session_info()
+```
