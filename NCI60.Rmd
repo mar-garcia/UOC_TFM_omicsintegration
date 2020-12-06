@@ -10,6 +10,9 @@ output:
 
 ```{r startpoint, include = FALSE}
 startpoint <- Sys.time()
+library(kableExtra)
+library(dplyr)
+library(RColorBrewer)
 ```
 
 # Descripción del ejemplo 
@@ -32,7 +35,7 @@ En este caso nos encontramos con múltiples conjuntos de datos que miden tanto l
 
 ## Objetivo
 
-Los objetivos que se persigue con este conjunto de datos es descubrir cual es la plataforma que está dando más información, identificar biomarcadores robustos en todos los conjuntos de datos, destacar discrepancias en las medidas específicas de una/s determinada/s plataforma/s, así como integrar y concatenar información para aumentar la cobertura de los datos disponibles y así poder abordar enfoques más holísticos.  
+Los objetivos que se persigue con este conjunto de datos es descubrir cual es la plataforma que está dando más información, identificar biomarcadores robustos para cada tipo de cáncer en todos los conjuntos de datos, destacar discrepancias en las medidas específicas de una/s determinada/s plataforma/s, así como integrar y concatenar información para aumentar la cobertura de los datos disponibles y así poder abordar enfoques más holísticos.  
 
 ## Importación y exploración de los datos  
 
@@ -114,11 +117,215 @@ Se puede observar como hay algunos tipos de cáncer que clusterizan de forma uni
 
 # MCIA (omicade4)
 
+El MCIA es aplicado a una lista de “data frames”, donde las muestras se situan en las columnas, siempre colocadas en el mismo orden. Así pues, tenemos que asegurarnos de que el orden de las columnas en todos los conjuntos de datos es el mismo antes de realizar el MCIA. El número de variables (genes) no tiene por qué ser el mismo.
+
+```{r}
+sapply(NCI60_4arrays, dim)
+all(apply((x <- sapply(NCI60_4arrays, colnames))[,-1], 2, function(y)
+  identical(y, x[,1])))
+```
+
+Ahora voy a proceder a la ejecución del modelo:
+
+```{r}
+cancer_type <- colnames(NCI60_4arrays$agilent)
+cancer_type <- factor(sapply(strsplit(cancer_type, split="\\."), function(x) x[1]))
+
+res.mcia <- mcia(NCI60_4arrays, cia.nf = 10)
+plot.mcia(res.mcia, axes=1:2, phenovec = cancer_type, df.color = 1:4, sample.lab=FALSE, gene.nlab = 2)
+```
+
+## “Eigenvalues” / Varianzas
+
+```{r}
+eig <- data.frame(
+  eigenvalue = res.mcia$mcoa$pseudoeig,
+  "percentage of variance" = res.mcia$mcoa$pseudoeig/sum(res.mcia$mcoa$pseudoeig)*100,
+  "cumulative percentage of variance" = NA)
+for(i in 1:nrow(eig)){
+  eig[i,3] <- sum(eig[1:i,2])
+}
+eig[c(1:10, (nrow(eig)-2):nrow(eig)),] %>%
+  kbl() %>%
+  kable_minimal()
+barplot(eig[,2])
+```
+
+En este caso vemos que las primeras dimensiones cubren un porcentaje similar de la variabilidad (25% y 22%), reteniendo aun una importante proporción de la variablidad la tercera dimensión (12%). Por lo tanto, no sólo los dos primeros ejes, sino también el tercero podría llevar a algunos hallazgos interesantes. Así que en este caso voy a considerar los 3-4 primeros componentes. Esta situación era previsible, ya que existe un elevado número (9) de grupos de muestras.  
+
+## Muestras
+
+```{r}
+par(mfrow=c(1,2))
+plot(res.mcia$mcoa$SynVar$SynVar1, res.mcia$mcoa$SynVar$SynVar2, 
+     col = c(seq(1:8), "purple")[cancer_type], pch = 16,
+     xlab = paste0("Dim 1 (", round(eig[1,2], 2), "%)"),
+     ylab = paste0("Dim 2 (", round(eig[2,2], 2), "%)"))
+grid()
+abline(v=0, lty = 2)
+abline(h=0, lty = 2)
+#legend("bottomright", col = c(seq(1:8), "purple"), 
+#       legend = levels(cancer_type), pch = 16)
+
+plot(res.mcia$mcoa$SynVar$SynVar3, res.mcia$mcoa$SynVar$SynVar4, 
+     col = c(seq(1:8), "purple")[cancer_type], pch = 16,
+     xlab = paste0("Dim 3 (", round(eig[3,2], 2), "%)"),
+     ylab = paste0("Dim 4 (", round(eig[4,2], 2), "%)"))
+grid()
+abline(v=0, lty = 2)
+abline(h=0, lty = 2)
+```
+
+En la imagen anterior se proyectan las muestras en las cuatro primeras dimensiones del MCIA. La posición de cada muestra representa la estructura de referencia que maximiza la covarianza derivada del análisis sintético del MCIA. Las muestras están coloreadas según la línea celular a la que pertenecen.  
+Se observa como en general las muestras procedentes de una misma línea celular se proyectan unas cerca de las otras, formando grupos.  
+La primera dimensión separara claramente las muestras de melanoma (ME, color rosa) de los otros tipos de cáncer, mientras que la segunda y tercera dimensión separa las muestras de leucemia (LE, color "cyan"). La tercera dimensión parece también separar (en el lado opuesto respeto las muestras LE) de las muestras de cáncer de colon (CO, color verde, las cuales también aparecian en el lado más opuesto respeto a las muestras ME en la primera dimensión), y la cuarta dimensión las muestras del sistema nerviso central (CNS, color rojo) de las muestras de cáncer renal (RE, color lila). Justamente estos 5 grupos de muestras (ME, LE, CO, CNS y RE) son los grupos de muestras que clusterizaban mejor en los análisis explorativos realizados inicialmente.  
+
+
+## Variables
+
+La siguiente pregunta interesante es qué genes son los responsables de definir las coordenadas de las muestras. El panel superior derecho es el espacio de las variables (genes), por ejemplo, los genes de diferentes plataformas, que se distinguen por sus colores y formas, se proyectan en este espacio. En este panel, un gen que está particularmente altamente expresado en una determinada línea celular se ubicará en la dirección de esta línea celular. Cuanto más lejos hacia el margen exterior (o lo que es lo mismo, cuanto mayor sea la distancia del origen), más fuerte es la asociación. Igualmente, los genes proyectados en la dirección opuesta al origen indican que se pierden o se regulan a la baja en esas líneas celulares.
+
+### Variables agrupadas
+
+En primer lugar se va a observar el espacio de “pseudo-eigenvalues” de todos los conjuntos de datos, lo que permite identificar la contribución de cada conjunto de datos a la varianza total, es decir, en qué medida cada conjunto de datos se desvía o está de acuerdo con lo que la mayoría de los conjuntos de datos apoyan. Es decir, es un resumen de la concordancia entre las distintas plataformas usadas (i.e., conjuntos de datos). El espacio de “pseudo-eigenvalues” representa la co-estructura general entre los conjuntos de datos y muestra qué plataforma contribuye más a la varianza total.
+
+```{r}
+par(mfrow = c(1, 2))
+plot(res.mcia$mcoa$cov2$cov21, res.mcia$mcoa$cov2$cov22, xlim = c(0,max(max(res.mcia$mcoa$cov2$cov21))+0.1), ylim = c(0,max(res.mcia$mcoa$cov2$cov22)+0.1), col = 1:4, pch=16,
+     xlab = "pseudoeig 1", ylab = "pseudoeig 2")
+grid()
+abline(v=0, lty = 2)
+abline(h=0, lty = 2)
+text(res.mcia$mcoa$cov2$cov21, res.mcia$mcoa$cov2$cov22, rownames(res.mcia$mcoa$cov2), pos = 1, col = 1:4, cex = 0.8)
+
+plot(res.mcia$mcoa$cov2$cov23, res.mcia$mcoa$cov2$cov24, xlim = c(0,max(max(res.mcia$mcoa$cov2$cov23))+0.1), ylim = c(0,max(res.mcia$mcoa$cov2$cov24)+0.1), col = 1:4, pch=16,
+     xlab = "pseudoeig 3", ylab = "pseudoeig 4")
+grid()
+abline(v=0, lty = 2)
+abline(h=0, lty = 2)
+text(res.mcia$mcoa$cov2$cov23, res.mcia$mcoa$cov2$cov24, rownames(res.mcia$mcoa$cov2), pos = 1, col = 1:4, cex = 0.8)
+```
+
+En general no se observa que ningún conjunto de datos en particular esté aportando una información muy mayor en una determinada dimensión respeto a los otros. A lo mejor, se podría decir que el dataset `hgu133p2` tiene un peso un poco menor en la primera dimensión, pero un poco mayor en la segunda, y que el dataset `agilent` tiene un peso menor tanto en la tercera como en la cuarta dimensión.  
+
+### Variables individuales
+
+```{r}
+idx1 <- order(abs(res.mcia$mcoa$Tco$SV1), decreasing = T)[1:4]
+idx2 <- order(abs(res.mcia$mcoa$Tco$SV2), decreasing = T)[1:4]
+idx3 <- order(abs(res.mcia$mcoa$Tco$SV3), decreasing = T)[1:4]
+idx4 <- order(abs(res.mcia$mcoa$Tco$SV4), decreasing = T)[1:4]
+
+par(mfrow = c(1, 2))
+
+plot(res.mcia$mcoa$Tco$SV1, res.mcia$mcoa$Tco$SV2, 
+     col = c(rep(1, nrow(NCI60_4arrays[[1]])), rep(2, nrow(NCI60_4arrays[[2]])), rep(3, nrow(NCI60_4arrays[[3]])), rep(4, nrow(NCI60_4arrays[[4]]))), pch = 16,
+     xlab = paste0("Dim 1 (", round(eig[1,2], 2), "%)"),
+     ylab = paste0("Dim 2 (", round(eig[2,2], 2), "%)"),
+     xlim = c((min(res.mcia$mcoa$Tco$SV1)-0.1), 
+              (max(res.mcia$mcoa$Tco$SV1)+0.1)),
+     ylim = c((min(res.mcia$mcoa$Tco$SV2)-0.1), 
+              (max(res.mcia$mcoa$Tco$SV2)+0.1)))
+grid()
+abline(v=0, lty = 2)
+abline(h=0, lty = 2)
+text(res.mcia$mcoa$Tco$SV1[c(idx1, idx2)], res.mcia$mcoa$Tco$SV2[c(idx1, idx2)], gsub("\\..*", "", rownames(res.mcia$mcoa$axis)[c(idx1, idx2)]), pos = 1, cex = 0.5)
+#legend("bottomright", col = 1:4, pch = 16, legend = names(NCI60_4arrays))
+
+
+plot(res.mcia$mcoa$Tco$SV3, res.mcia$mcoa$Tco$SV4, 
+     col = c(rep(1, nrow(NCI60_4arrays[[1]])), rep(2, nrow(NCI60_4arrays[[2]])), rep(3, nrow(NCI60_4arrays[[3]])), rep(4, nrow(NCI60_4arrays[[4]]))), pch = 16,
+     xlab = paste0("Dim 3 (", round(eig[3,2], 2), "%)"),
+     ylab = paste0("Dim 4 (", round(eig[4,2], 2), "%)"),
+     xlim = c((min(res.mcia$mcoa$Tco$SV3)-0.1), 
+              (max(res.mcia$mcoa$Tco$SV3)+0.1)),
+     ylim = c((min(res.mcia$mcoa$Tco$SV4)-0.1), 
+              (max(res.mcia$mcoa$Tco$SV4)+0.1)))
+grid()
+abline(v=0, lty = 2)
+abline(h=0, lty = 2)
+text(res.mcia$mcoa$Tco$SV3[c(idx3, idx4)], res.mcia$mcoa$Tco$SV4[c(idx3, idx4)], gsub("\\..*", "", rownames(res.mcia$mcoa$axis)[c(idx3, idx4)]), pos = 1, cex = 0.5)
+```
+
+En este sentido, dado que las líneas celulares del melanoma tienen un gran peso en el lado positivo del eje horizontal en el primer panel, el melanoma correspondiente los genes altamente expresados están en la misma dirección. Así pues, a continuación vamos a seleccionar los genes asociados al melanoma según la coordenada de los genes en ese espacio (la primera columna representa los nombres de los genes, mientras que las siguientes columnas indican qué genes se identifican en qué plataformas, y la última columna es una estadística del número total de plataformas que identifican el gen correspondiente en la región seleccionada):
+
+```{r}
+gen_ME <- selectVar(res.mcia, a1.lim=c(1, Inf))
+gen_ME$db_n <- rowSums(gen_ME[,2:5], na.rm = TRUE)
+gen_ME[nrow(gen_ME)+1, 2:5] <- colSums(gen_ME[,2:5], na.rm = TRUE)
+
+gen_LE1 <- selectVar(res.mcia, a2.lim=c(-Inf, -1))
+gen_LE1$db_n <- rowSums(gen_LE1[,2:5], na.rm = TRUE)
+gen_LE1[nrow(gen_LE1)+1, 2:5] <- colSums(gen_LE1[,2:5], na.rm = TRUE)
+
+gen_LE2 <- selectVar(res.mcia, axis1 = 3, axis2 = 4, a1.lim=c(1, Inf))
+gen_LE2$db_n <- rowSums(gen_LE2[,2:5], na.rm = TRUE)
+gen_LE2[nrow(gen_LE2)+1, 2:5] <- colSums(gen_LE2[,2:5], na.rm = TRUE)
+
+gen_CO1 <- selectVar(res.mcia, a1.lim=c(-Inf, -0.9), a2.lim = c(-Inf, -0.9))
+gen_CO1$db_n <- rowSums(gen_CO1[,2:5], na.rm = TRUE)
+gen_CO1[nrow(gen_CO1)+1, 2:5] <- colSums(gen_CO1[,2:5], na.rm = TRUE)
+
+gen_CO2 <- selectVar(res.mcia, axis1 = 3, axis2 = 4, a1.lim=c(-Inf, -0.8), a2.lim = c(-Inf, -0.8))
+gen_CO2$db_n <- rowSums(gen_CO2[,2:5], na.rm = TRUE)
+gen_CO2[nrow(gen_CO2)+1, 2:5] <- colSums(gen_CO2[,2:5], na.rm = TRUE)
+
+gen_CNS <- selectVar(res.mcia, axis1 = 3, axis2 = 4, a2.lim=c(-Inf, -1))
+gen_CNS$db_n <- rowSums(gen_CNS[,2:5], na.rm = TRUE)
+gen_CNS[nrow(gen_CNS)+1, 2:5] <- colSums(gen_CNS[,2:5], na.rm = TRUE)
+
+gen_RE <- selectVar(res.mcia, axis1 = 3, axis2 = 4, a2.lim=c(1, Inf))
+gen_RE$db_n <- rowSums(gen_RE[,2:5], na.rm = TRUE)
+gen_RE[nrow(gen_RE)+1, 2:5] <- colSums(gen_RE[,2:5], na.rm = TRUE)
+
+gen_ME %>%
+  kbl() %>%
+  kable_minimal()
+gen_LE1 %>%
+  kbl() %>%
+  kable_minimal()
+gen_LE2 %>%
+  kbl() %>%
+  kable_minimal()
+gen_CO1 %>%
+  kbl() %>%
+  kable_minimal()
+gen_CO2 %>%
+  kbl() %>%
+  kable_minimal()
+gen_CNS %>%
+  kbl() %>%
+  kable_minimal()
+gen_RE %>%
+  kbl() %>%
+  kable_minimal()
+```
+
+Con el objetivo de homogenizar el criterio para la selección de variables y tras observar que la principal nube de puntos en el "loading plot" se situa dentro los los valores -/+1, se ha usado este valor como punto de corte, a excpeción de las muestras del grupo CO, ya que en este caso estas muestras en ambos gráficos (Dim1-Dim2 y Dim3-Dim4) más que situarse en un extremo horizontal/vertical del gráfico, se situan en la diagonal de los mismos y usando el punto de corte -/+1 únicamente se seleccionaban 2 variables cada vez, por lo que en este caso se ha preferido ser un poco más "laxo" y reducir un poco el punto de corte hasta 0.9 y 0.8.  
+Como era de esperar, para los grupos de muestras separados por los primeros componentes (en este caso el ME), usando el mismo punto de corte (1 en este caso) hay un mayor número de variables discriminantes en comparación a los grupos de muestras separados por las dimensiones posteriores (por ejemplo CNS o RE).   
+Notar también que debido a que algunos grupos de muestras (LE y CO) son separados por más de 1 dimensión, se han considerado >1 Dim para la selección de las variables discriminantes, a fin también de ver hasta que punto hay una concordancia.  
+  
+Por otro lado, y enlazando con el gráfico de las variables agrupadas, por ejemplo, habíamos dicho que parecía que la plataforma `HGU 133 plus 2.0` era aquella con un menor peso en en el primer eje. Precisamente es este conjunto de datos el que aporta un menor número de variables discriminantes para el melanoma (9 respecto los 11-15 de las otras plataformas), mientras que es aquella plataforma que aporta un mayor número de variables discriminantes para la leucemia (7 respeto 4-6, y 8 respeto 3-5).   
+Lo mismo para `Agilent` como plataforma que menos peso tiene en las dimensiones 3 y 4: es aquella con un menor numero de variables discriminantes para la leucemia (3 respeto 5-8) y colon (0 respeto 1 para cada una de las otras plataformas). Para CNS y RE no es la plataforma con un menor número de variables discriminantes (aunque tampoco la mayor).  
+Es obvio que estas diferencias no son muy pronunciadas, pero ya se había comentado anteriormente que parecía que ninguna plataforma aportaba un peso muy distinto en ninguna de las dimensiones inspeccionadas respeto a las otras plataformas (lo que tiene lógica, ya que al fin y al cabo son medidas muy similares (*microarrays*) realizadas en las mismas muestras). 
+
+```{r}
+plotVar(res.mcia, var=c("S100B", "S100A1", "FAM167B", "GMFG", "ITM2A"), var.lab=TRUE, axes = 1:2)
+
+plotVar(res.mcia, var=c("S100B", "S100A1", "FAM167B", "GMFG", "ITM2A"), var.lab=TRUE, axes = 3:4)
+```
+
+
 # MFA (FactorMiner)
 
 # DIABLO (mixOmics)
 
 # Conclusiones
+
+- `MCIA`: La mayoría de los genes discriminantes únicamente fueron medidos con 1 plataforma, pero aquellos que habían sido medidos por >1 plataforma, en todas las plataformas que fue medido resultaron ser discriminantes (lo que es idealmente esperable).  
+
+- `MCIA` y `DIABLO` permiten seleccionar las variables discriminantes, dada la definición de los grupos a los que pertenecen las muestras, mientras que no exite una función de este tipo en el `MCA`(?).  
+- `MCA` está focalizado en los análisis no superviados, `DIABLO` en los supervisados y `MCIA` sería una "via di mezzo", ya que si bien hace análisis no supervisados, permite tener en consideración una variable que indique los grupos a los que pertenecen las muestras, aunque luego no proporciona parámetros de validación del modelo generado para el fenotipo en cuestión.  
 
 # Session information
 
