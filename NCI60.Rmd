@@ -1,0 +1,128 @@
+---
+title: "NCI60"
+author: "Mar Garcia-Aloy"
+output: 
+  html_document:
+    toc: true
+    number_sections: false
+    toc_float: true
+---
+
+```{r startpoint, include = FALSE}
+startpoint <- Sys.time()
+```
+
+# Descripción del ejemplo 
+
+En este documento voy a aplicar los algoritmos MCIA (del paquete `omicade4`), MFA (del paquete `FactorMineR`) y DIABLO (del paquete `mixOmics`) al conjunto de datos de demostración proporcionado por el algorimto MCIA del paquete `omicade4`.  
+Se trata de un conjunto de datos llamado `NCI-60` adquiridos por el Instituto Nacional del Cáncer de los Estados Unidos metdiante cuatro plataformas distintas de chips de DNA ("*microarrays*"): Agilent, Affymetrix HGU 95, Affymetrix HGU 133 y Affymetrix HGU 133plus 2.0.  
+El estudio fue desarrollado para evaluar la sensibilidad a una serie de fármacos en 60 líneas celulares humanas de 9 distintos tejidos tumorales:      
+  
+  - melanomas (ME)    
+  - leucemias (LE)    
+  - mama (BR)    
+  - renal (RE)    
+  - ovario (OV)    
+  - sistema nervioso central (NCS)    
+  - pulmón (LC)    
+  - próstata (PR)     
+  - colon (CO)    
+    
+En este caso nos encontramos con múltiples conjuntos de datos que miden tanto las mismas como distintas moléculas biológicas (genes en este caso). 
+
+## Objetivo
+
+Los objetivos que se persigue con este conjunto de datos es descubrir cual es la plataforma que está dando más información, identificar biomarcadores robustos en todos los conjuntos de datos, destacar discrepancias en las medidas específicas de una/s determinada/s plataforma/s, así como integrar y concatenar información para aumentar la cobertura de los datos disponibles y así poder abordar enfoques más holísticos.  
+
+## Importación y exploración de los datos  
+
+Los datos se encuentran en el objeto `NCI60_4arrays`, que es una lista que contiene los datos de microarrays del NCI-60 con sólo unos pocos cientos de genes seleccionados al azar.  
+Cada elemento de la lista es un “data.frame” con los datos de cada una de las plataformes, donde los genes se ordenan en filas y las muestras (i.e., tejidos tumorales) en columnas.
+
+```{r}
+library(omicade4)
+data(NCI60_4arrays)
+```
+
+A continuación voy a inspeccionar, mediante un diagrama de Venn, cual es la coincidencia de los genes incluidos en cada uno de los conjuntos de datos.
+
+```{r}
+agilent <- data.frame(gens = row.names(NCI60_4arrays[[1]]))
+agilent$agilent <- 1
+
+hgu133 <- data.frame(gens = row.names(NCI60_4arrays[[2]]))
+hgu133$hgu133 <- 1
+
+hgu133p2 <- data.frame(gens = row.names(NCI60_4arrays[[3]]))
+hgu133p2$hgu133p2 <- 1
+
+hgu95 <- data.frame(gens = row.names(NCI60_4arrays[[4]]))
+hgu95$hgu95 <- 1
+
+data <- merge(agilent, hgu133, by = "gens", all = TRUE)
+data <- merge(data, hgu133p2, by = "gens", all = TRUE)
+data <- merge(data, hgu95, by = "gens", all = TRUE)
+rm(agilent, hgu133, hgu133p2, hgu95, x)
+data[is.na(data)] <- 0
+
+
+library(VennDiagram)
+grid.newpage()
+draw.quad.venn(
+  area1 = sum(data$agilent == 1), 
+  area2 = sum(data$hgu133 == 1), 
+  area3 = sum(data$hgu133p2 == 1), 
+  area4 = sum(data$hgu95 == 1), 
+  n12 = sum(data$agilent == 1 & data$hgu133 == 1), 
+  n13 = sum(data$agilent == 1 & data$hgu133p2 == 1), 
+  n14 = sum(data$agilent == 1 & data$hgu95 == 1), 
+  n23 = sum(data$hgu133 == 1 & data$hgu133p2 == 1), 
+  n24 = sum(data$hgu133 == 1 & data$hgu95 == 1),
+  n34 = sum(data$hgu133p2 == 1 & data$hgu95 == 1), 
+  n123 = sum(data$agilent == 1 & data$hgu133 == 1 & data$hgu133p2 == 1), 
+  n124 = sum(data$agilent == 1 & data$hgu133 == 1 & data$hgu95 == 1), 
+  n134 = sum(data$agilent == 1 & data$hgu133p2 == 1 & data$hgu95 == 1), 
+  n234 = sum(data$hgu133 == 1 & data$hgu133p2 == 1 & data$hgu95 == 1),
+  n1234 = sum(data$agilent == 1 & data$hgu133 == 1 & data$hgu133p2 == 1 & data$hgu95 == 1),
+  category = c("Agilent", "Hgu 133", "Hgu 133 p2", "Hgu 95"),
+  fill = c("#DF536B", "#61D04F", "#2297E6", "#F5C710")
+  )
+```
+
+Tal y como se puede observar en el diagrama de Venn, no hay ningún gen común para las 4 plataformas, pero si que hay algunos genes medidos en almenos 2 plataformas. Por ejemplo, hay un total de 16 genes medidos en las plataformas “Hgu 133 p2” y “Hgu 95”, y 13 genes medidos con las plataformas “Agilent” y “Hgu 133”, entre otros.  
+  
+Antes de realizar el MCIA, podemos utilizar la agrupación jerárquica para tener una idea general sobre la similitud de las líneas celulares.
+
+```{r}
+library(dendextend)
+layout(matrix(1:4, 1, 4))
+par(mar=c(2, 1, 1, 6))
+for (i in 1:length(NCI60_4arrays)) {
+  df <- NCI60_4arrays[[i]]
+  d <- dist(t(df))
+  hcl <- hclust(d)
+  dend <- as.dendrogram(hcl)
+  colors_to_use <- as.numeric(factor(substr(colnames(df), 1, 2)))
+  colors_to_use <- colors_to_use[order.dendrogram(dend)]
+  labels_colors(dend) <- colors_to_use
+  plot(dend, horiz=TRUE, main=names(NCI60_4arrays)[[i]])
+}
+```
+
+Se puede observar como hay algunos tipos de cáncer que clusterizan de forma uniforme en cada una de las plataformas. Esos son principalmente las leucemias (LE) y los melanomas (ME), aunque también clusterizan de forma bastante optima las muestras de cáncer de colon (CO), renal (RE) y del sistema nervioso central (SNC).  
+
+
+# MCIA (omicade4)
+
+# MFA (FactorMiner)
+
+# DIABLO (mixOmics)
+
+# Conclusiones
+
+# Session information
+
+```{r session}
+Sys.time()-startpoint
+devtools::session_info()
+```
