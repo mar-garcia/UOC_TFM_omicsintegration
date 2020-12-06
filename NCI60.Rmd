@@ -318,6 +318,108 @@ plotVar(res.mcia, var=c("S100B", "S100A1", "FAM167B", "GMFG", "ITM2A"), var.lab=
 
 # MFA (FactorMiner)
 
+```{r}
+library(FactoMineR)
+library(factoextra)
+```
+
+
+En este caso los datos deben situarse en un "data frame" y durante la ejecución del modelo se indican qué columnas pertenecen a cada conjunto de variables. Además, el algoritmo permite definir las variables como activas (aquellas que se usarán para la construcción del modelo) o suplementarias (aquellas que aportan información descriptiva/complementaria al "output" obtenido, pero que no se usan para la realización del modelo). En este caso, se van a usar todas las variables de medición de genes como activas y como variable suplementaria se va a usar el tipo de cáncer.
+
+```{r}
+NCI60_df <- data.frame(t(do.call("rbind", NCI60_4arrays)))
+NCI60_df$cancer_type <- factor(cancer_type)
+
+res.mfa <- MFA(NCI60_df, 
+               group = c(nrow(NCI60_4arrays[[1]]), 
+                         nrow(NCI60_4arrays[[2]]), 
+                         nrow(NCI60_4arrays[[3]]), 
+                         nrow(NCI60_4arrays[[4]]), 1), 
+               type = c(rep("s", 4), "n"),
+               ncp = 10,
+               name.group = c(names(NCI60_4arrays), "type"),
+               num.group.sup = c(5),
+               graph = FALSE)
+```
+
+## “Eigenvalues” / Varianzas
+
+La proporción de las varianzas retenidas para cada una de las dimensiones es:
+
+```{r}
+res.mfa$eig[c(1:10, (nrow(res.mfa$eig)-2):nrow(res.mfa$eig)),] %>%
+  kbl() %>%
+  kable_minimal()
+fviz_screeplot(res.mfa)
+```
+
+En este caso las primeras dimensiones engloban un porcentaje de la variabilidad menor a aquel observado por el modelo generado con el algoritmo MCIA, aunque sería también necesario considerar almenos hasta la dimensión 3-4 para la evaluación de los resultados obtenidos también con este modelo.
+
+
+## Muestras
+
+```{r}
+plot(res.mfa, axes = c(1, 2), choix="ind", lab.ind=FALSE, habillage = "cancer_type")
+plot(res.mfa, axes = c(3, 4), choix="ind", lab.ind=FALSE, habillage = "cancer_type")
+```
+
+En este caso parece que el primer componente es aquel que separa las muestras de leucemia (LE) de las otras, mientras que es el segundo componente el que separa las muestras de melanoma (ME) de las otras.  
+Aunque las dimensiones 3 y 4 no parecen separar ningún grupo de forma particular, sí que parece que el 3r componente estaría separando las muestras de leucemia (LE) de las de cáncer de cólon (CO), y el 4o componente las muestras de renales (RE) de las pulmonares (LC).  
+Así pues, aunque el "output" no es exactamente el mismo al observado tras aplicar el modelo `MFA`, sí que los principales grupos discriminados por los primeros 4 componentes son en general los mismos: ME, LE, CO y RE. De nuevo las muestras CNS parecen ser separadas cuando se consideran 2 dimensiones a la vez, en este caso la 3a y la 4a.  
+```{r}
+plot(res.mfa, axes = c(1, 2), habillage = "cancer_type", invisible="quali.sup", select = "contrib 15", cex = 0.5)
+plot(res.mfa, axes = c(3, 4), habillage = "cancer_type", invisible="quali.sup", select = "contrib 15", cex = 0.5)
+```
+
+
+## Variables
+
+### Variables agrupadas
+
+```{r}
+plot.MFA(res.mfa, choix="group", axes = 1:2)
+plot.MFA(res.mfa, choix="group", axes = 3:4)
+
+fviz_contrib(res.mfa, "group", axes = 1)
+fviz_contrib(res.mfa, "group", axes = 2)
+fviz_contrib(res.mfa, "group", axes = 3)
+fviz_contrib(res.mfa, "group", axes = 4)
+```
+
+También en este caso parece que todos los conjuntos de datos presentan un peso similar en las 3 primeras dimensiones. Sin embargo, en este caso se observa que la plataforma `Agilent` es aquella con un mayor peso en la 4a dimensión, que es la que estaba separando las muestras RE de las LC.
+
+## Variables individuales
+
+```{r}
+fviz_mfa_var(res.mfa, "quanti.var", axes = c(1, 2), palette = "jco", 
+             col.var.sup = "violet", repel = TRUE,
+             geom = "point", legend = "bottom")
+fviz_mfa_var(res.mfa, "quanti.var", axes = c(3, 4), palette = "jco", 
+             col.var.sup = "violet", repel = TRUE,
+             geom = "point", legend = "bottom")
+```
+
+Una observación curiosa y que concuerda con los gráficos del apartado anterior es que se observa que las variables más discriminantes de la dimensión 4 son aquellas medidas con la plataforma agilent (coloreadas en azul.)
+
+```{r}
+fviz_contrib(res.mfa, choice = "quanti.var", axes = 1, top = 20,
+             palette = "jco")
+fviz_contrib(res.mfa, choice = "quanti.var", axes = 2, top = 20,
+             palette = "jco")
+fviz_contrib(res.mfa, choice = "quanti.var", axes = 3, top = 20,
+             palette = "jco")
+fviz_contrib(res.mfa, choice = "quanti.var", axes = 4, top = 20,
+             palette = "jco")
+
+fviz_mfa_var(res.mfa, "quanti.var", axes = c(1, 2), palette = "jco", 
+             repel = TRUE,
+             geom = c("point", "text"), legend = "bottom", select.var = list(contrib = 20))
+fviz_mfa_var(res.mfa, "quanti.var", axes = c(3, 4), palette = "jco", 
+             repel = TRUE,
+             geom = c("point", "text"), legend = "bottom", select.var = list(contrib = 20))
+```
+
+
 # DIABLO (mixOmics)
 
 # Conclusiones
@@ -326,6 +428,8 @@ plotVar(res.mcia, var=c("S100B", "S100A1", "FAM167B", "GMFG", "ITM2A"), var.lab=
 
 - `MCIA` y `DIABLO` permiten seleccionar las variables discriminantes, dada la definición de los grupos a los que pertenecen las muestras, mientras que no exite una función de este tipo en el `MCA`(?).  
 - `MCA` está focalizado en los análisis no superviados, `DIABLO` en los supervisados y `MCIA` sería una "via di mezzo", ya que si bien hace análisis no supervisados, permite tener en consideración una variable que indique los grupos a los que pertenecen las muestras, aunque luego no proporciona parámetros de validación del modelo generado para el fenotipo en cuestión.  
+- Una cosa común en todos los algoritmos es que permiten valorar el peso que cada conjunto de variables ejerce en cada una de las dimensiones.  
+- Otra cosa en común en la interpretación de los resultados es que hacen falta considerar almenos las 3-4 primeras dimensiones en la valoración de los resultados (cosa lógica debido al elevado número de grupos a los que pertenecen las muestras).  
 
 # Session information
 
