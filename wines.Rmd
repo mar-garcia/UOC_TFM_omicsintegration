@@ -96,7 +96,6 @@ El valor que se indica de cada una de las características sensoriales para cada
 El objetivo que se persigue con este conjunto de datos es analizar las características de los vinos según la evaluación sensorial.
 
 
-# DIABLO (mixomics)
 
 # MFA (FactorMiner)
 
@@ -147,7 +146,7 @@ fviz_contrib(res.mfa, "group", axes = 2)
 
 La línea discontínua roja indica el valor medio esperado en el caso que las contribuciones fueran uniformes.
 
-### Variables cuantitativas individuales
+### Variables individuales
 
 A continuación se van a destacar aquellas variables cuantitativas (coloreadas según al grupo al que pertenecen) que más contribuyen a cada una de las dimensiones mediante 2 tipos de gráficos: el círculo de correlaciones (donde se proyectan las variables cuantitativas para observar tanto las relaciones entre las mismas como su correlación con cada una de las dimensiones) y el gráfico de barras en el que se indica la contribución (en %) de cada una de las variables cuantitativas en la definición de cada una de las dimensiones.
 
@@ -335,7 +334,7 @@ res.mcia$mcoa$RV %>%
 ``` 
 
 
-### Variables cuantitativas individuales
+### Variables individuales
 
 ```{r}
 plot(res.mcia$mcoa$Tco$SV1, res.mcia$mcoa$Tco$SV2, col = c(rep(1, 5), rep(2, 10), rep(3, 3), rep(4, 9)), pch = 16,
@@ -369,10 +368,90 @@ De nuevo se observa una distribución de las muestras bastante distinta a aquell
 Aun así, lo que sí se puede observar es que en el cuadrante inferior-izquierdo se situan las muestras "T1" y "T2". En este mismo cuadrante del gráfico de las variables se situan las características "Odor.intensity.before.shaking", "Spice", "Bitterness", "Odor.intensity" y "Astringency", las cuales también se situaban en el mismo cuadrante que las muestras "T1" y "T2" en el `MFA`.  
 Addicionalmente, también se observa que justamente las variables "Plantae" y "Acidity" eran aquellas con una correlación negativa en la primera dimensión. Las muestras situadas en el extremo izquierdo del gráfico eran "1VAU" y "2ING". Con el algoritmo `MCIA` ambas muestras se situan en el cuadrante superior-izquierdo,, justamente donde también se situan las dos variables mencionadas.  
   
+# DIABLO (mixomics)
+
+Los datos deben estar en una lista compuesta por distintos "data frames", una por cada tipo de datos. En el caso de querer hacer un análisis supervisado, además también necesitará un factor referente a la clase a la que pertenece cada muestra. Las muestras se situan en las filas y las variables en las columnas.  
+`DIABLO` necesita una variable respuesta. En este caso voy a usar la variable "Overall.quality".
+
+```{r}
+X <- list(
+  #origin = data.frame(wine[,1:2]),
+  odor_pre = data.frame(wine[,3:7]),
+  odor_post = data.frame(wine[,11:20]),
+  visual = data.frame(wine[,8:10]),
+  taste = data.frame(wine[,21:29])#,
+  #overall = data.frame(wine[,30:31])
+)
+sapply(X, dim)
+Y <- matrix(wine$Overall.quality)
+rownames(Y) <- rownames(wine)
+res.diablo <- block.pls(X = X, Y = Y, ncomp = 2, 
+                        scale = TRUE)
+```
+
+## Variables
+
+### Variables agrupadas
+
+```{r}
+plot(res.diablo$weights$comp1, res.diablo$weights$comp2, 
+     xlim = c(0,max(res.diablo$weights$comp1)+0.1), 
+     ylim = c(0,max(res.diablo$weights$comp2)+0.1), col = 1:4, pch=16,
+     xlab = "Dim 1", ylab = "Dim 2")
+grid()
+abline(v=0, lty = 2)
+abline(h=0, lty = 2)
+text(res.diablo$weights$comp1, res.diablo$weights$comp2, rownames(res.diablo$weights), pos = 1, col = 1:4, cex = 0.8)
+```
+
+También aquí se observa como los cuatro conjutnos de datos presentan un peso similar en la primera componente. Sin embargo, la distribución de los pesos en la segunda dimensión aquí ya difiere un poco respeto a los algoritmos precedentes.  
+
+### Variables individuales
+
+```{r}
+tmp <- do.call("rbind", res.diablo$loadings)
+tmp <- data.frame(tmp[-nrow(tmp),])
+
+plot(tmp$comp1, tmp$comp2, col = c(rep(1, 5), rep(2, 10), rep(3, 3), rep(4, 9)), pch = 16,
+     xlab = "Dim 1", ylab = "Dim 2", xlim = c(min(tmp$comp1)-0.1,
+                                              max(tmp$comp1)+0.1),
+     ylim = c(min(tmp$comp2)-0.1,
+                                              max(tmp$comp2)+0.1))
+grid()
+abline(v=0, lty = 2)
+abline(h=0, lty = 2)
+text(tmp$comp1, tmp$comp2, rownames(tmp),pos = 1, cex = 0.5)
+legend("topright", col = 1:4, pch = 16, legend = names(X))
+```
+
+
+No se permite hacer el círculo de correlaciones (`plotVar`) para un modelo no supervisado. Tampoco se pueden hacer `circosPlot` ni `cimPlot`.
+
+
+```{r}
+#plotLoadings(res.diablo, comp = 1, contrib = "max")
+#plotLoadings(res.diablo, comp = 2, contrib = "max")
+#plotDiablo(res.diablo, ncomp = 1)
+network(res.diablo, blocks = c(1,2,3,4), cutoff = 0.9, save = "jpeg", name.save = "wines_network")
+```
+
+![](/Users/lenovo/Documents/GitHub/UOC_TFM_omicsintegration/wines_network.jpeg)
+
+## Muestras
+
+```{r}
+plotIndiv(res.diablo, blocks = "consensus")
+```
+
+Como en el caso del `MFA` se observa como la primera dimensión separa el vino `1DAM` de los vinos `2ING` y `1VAU`, y que la segunda dimensión separa los vinos `T1` y `T2`.  
+También en este caso (en concordancia con el `MFA`), las variables con más peso en la primera dimensión son las 3 variables que miden características visuales, así como la calidad del aroma y la frutabilidad antes de la agitación, mientras que en la segunda dimensión, aquellas variables con mayor peso también fueron "spice before shaking", "odor intensity before shaking", "biterness", "spice" y "odor intensity".  
+
 
 # Conclusiones
 
+- `DIABLO` permite la realización de análisis supervisados y no supervisados, mientras que los otros 2 algoritmos únicamente permiten análisis no supervisados. Referente a los análisis supervisados, `DIABLO` permite tener un "training set" y un "test set".    
 - `MFA` permite agregar información de variables descriptivas no usadas para la construcción del modelo, mientras que esta opción no está disponible con `MCIA`.  
+- `MCIA` permite evaluar la correlación entre los distintos conjuntos de variables a través del coeficiente "RV".  
 - El % de varianza capturado por las distintas dimensiones es bastante similar entre los distintos algoritmos, así como el peso de los distintos grupos de variables en las dos primeras dimensiones (que son las que engloban hasta un 70-80% de la variabilidad total).   
 - La interpretación de los resultados más específica no es extremadamente homogénea. Esto podría ser a que el conjunto de datos no presenta unas fuentes de variabilidad muy importantes. La mayor a lo mejor podría ser la asociada con las muestras "T1" y "T2", las cuales de hecho se trata del mismo vino evaluado dos veces por los evaluadores. Parece que para las muestras más extremas sí que hay coincidencia (T1-T2 y 1VAU-2ING).
 
