@@ -12,7 +12,6 @@ output:
 startpoint <- Sys.time()
 library(kableExtra)
 library(dplyr)
-library(RColorBrewer)
 ```
 
 # Descripción del ejemplo 
@@ -129,10 +128,12 @@ Ahora voy a proceder a la ejecución del modelo:
 
 ```{r}
 cancer_type <- colnames(NCI60_4arrays$agilent)
-cancer_type <- factor(sapply(strsplit(cancer_type, split="\\."), function(x) x[1]))
+cancer_type <- factor(sapply(strsplit(cancer_type, split="\\."), 
+                             function(x) x[1]))
 
 res.mcia <- mcia(NCI60_4arrays, cia.nf = 10)
-plot.mcia(res.mcia, axes=1:2, phenovec = cancer_type, df.color = 1:4, sample.lab=FALSE, gene.nlab = 2)
+plot.mcia(res.mcia, axes=1:2, phenovec = cancer_type, df.color = 1:4, 
+          sample.lab=FALSE, gene.nlab = 2)
 ```
 
 ## “Eigenvalues” / Varianzas
@@ -140,7 +141,8 @@ plot.mcia(res.mcia, axes=1:2, phenovec = cancer_type, df.color = 1:4, sample.lab
 ```{r}
 eig <- data.frame(
   eigenvalue = res.mcia$mcoa$pseudoeig,
-  "percentage of variance" = res.mcia$mcoa$pseudoeig/sum(res.mcia$mcoa$pseudoeig)*100,
+  "percentage of variance" = res.mcia$mcoa$pseudoeig / 
+    sum(res.mcia$mcoa$pseudoeig)*100,
   "cumulative percentage of variance" = NA)
 for(i in 1:nrow(eig)){
   eig[i,3] <- sum(eig[1:i,2])
@@ -191,19 +193,25 @@ En primer lugar se va a observar el espacio de “pseudo-eigenvalues” de todos
 
 ```{r}
 par(mfrow = c(1, 2))
-plot(res.mcia$mcoa$cov2$cov21, res.mcia$mcoa$cov2$cov22, xlim = c(0,max(max(res.mcia$mcoa$cov2$cov21))+0.1), ylim = c(0,max(res.mcia$mcoa$cov2$cov22)+0.1), col = 1:4, pch=16,
+plot(res.mcia$mcoa$cov2$cov21, res.mcia$mcoa$cov2$cov22, 
+     xlim = c(0,max(max(res.mcia$mcoa$cov2$cov21))+0.1), 
+     ylim = c(0,max(res.mcia$mcoa$cov2$cov22)+0.1), col = 1:4, pch=16,
      xlab = "pseudoeig 1", ylab = "pseudoeig 2")
 grid()
 abline(v=0, lty = 2)
 abline(h=0, lty = 2)
-text(res.mcia$mcoa$cov2$cov21, res.mcia$mcoa$cov2$cov22, rownames(res.mcia$mcoa$cov2), pos = 1, col = 1:4, cex = 0.8)
+text(res.mcia$mcoa$cov2$cov21, res.mcia$mcoa$cov2$cov22, 
+     rownames(res.mcia$mcoa$cov2), pos = 1, col = 1:4, cex = 0.8)
 
-plot(res.mcia$mcoa$cov2$cov23, res.mcia$mcoa$cov2$cov24, xlim = c(0,max(max(res.mcia$mcoa$cov2$cov23))+0.1), ylim = c(0,max(res.mcia$mcoa$cov2$cov24)+0.1), col = 1:4, pch=16,
+plot(res.mcia$mcoa$cov2$cov23, res.mcia$mcoa$cov2$cov24, 
+     xlim = c(0,max(max(res.mcia$mcoa$cov2$cov23))+0.1), 
+     ylim = c(0,max(res.mcia$mcoa$cov2$cov24)+0.1), col = 1:4, pch=16,
      xlab = "pseudoeig 3", ylab = "pseudoeig 4")
 grid()
 abline(v=0, lty = 2)
 abline(h=0, lty = 2)
-text(res.mcia$mcoa$cov2$cov23, res.mcia$mcoa$cov2$cov24, rownames(res.mcia$mcoa$cov2), pos = 1, col = 1:4, cex = 0.8)
+text(res.mcia$mcoa$cov2$cov23, res.mcia$mcoa$cov2$cov24, 
+     rownames(res.mcia$mcoa$cov2), pos = 1, col = 1:4, cex = 0.8)
 ```
 
 En general no se observa que ningún conjunto de datos en particular esté aportando una información muy mayor en una determinada dimensión respeto a los otros. A lo mejor, se podría decir que el dataset `hgu133p2` tiene un peso un poco menor en la primera dimensión, pero un poco mayor en la segunda, y que el dataset `agilent` tiene un peso menor tanto en la tercera como en la cuarta dimensión.  
@@ -219,7 +227,10 @@ idx4 <- order(abs(res.mcia$mcoa$Tco$SV4), decreasing = T)[1:4]
 par(mfrow = c(1, 2))
 
 plot(res.mcia$mcoa$Tco$SV1, res.mcia$mcoa$Tco$SV2, 
-     col = c(rep(1, nrow(NCI60_4arrays[[1]])), rep(2, nrow(NCI60_4arrays[[2]])), rep(3, nrow(NCI60_4arrays[[3]])), rep(4, nrow(NCI60_4arrays[[4]]))), pch = 16,
+     col = c(rep(1, nrow(NCI60_4arrays[[1]])), 
+             rep(2, nrow(NCI60_4arrays[[2]])), 
+             rep(3, nrow(NCI60_4arrays[[3]])), 
+             rep(4, nrow(NCI60_4arrays[[4]]))), pch = 16,
      xlab = paste0("Dim 1 (", round(eig[1,2], 2), "%)"),
      ylab = paste0("Dim 2 (", round(eig[2,2], 2), "%)"),
      xlim = c((min(res.mcia$mcoa$Tco$SV1)-0.1), 
@@ -229,12 +240,18 @@ plot(res.mcia$mcoa$Tco$SV1, res.mcia$mcoa$Tco$SV2,
 grid()
 abline(v=0, lty = 2)
 abline(h=0, lty = 2)
-text(res.mcia$mcoa$Tco$SV1[c(idx1, idx2)], res.mcia$mcoa$Tco$SV2[c(idx1, idx2)], gsub("\\..*", "", rownames(res.mcia$mcoa$axis)[c(idx1, idx2)]), pos = 1, cex = 0.5)
+text(res.mcia$mcoa$Tco$SV1[c(idx1, idx2)], 
+     res.mcia$mcoa$Tco$SV2[c(idx1, idx2)], 
+     gsub("\\..*", "", rownames(res.mcia$mcoa$axis)[c(idx1, idx2)]), 
+     pos = 1, cex = 0.5)
 #legend("bottomright", col = 1:4, pch = 16, legend = names(NCI60_4arrays))
 
 
 plot(res.mcia$mcoa$Tco$SV3, res.mcia$mcoa$Tco$SV4, 
-     col = c(rep(1, nrow(NCI60_4arrays[[1]])), rep(2, nrow(NCI60_4arrays[[2]])), rep(3, nrow(NCI60_4arrays[[3]])), rep(4, nrow(NCI60_4arrays[[4]]))), pch = 16,
+     col = c(rep(1, nrow(NCI60_4arrays[[1]])), 
+             rep(2, nrow(NCI60_4arrays[[2]])), 
+             rep(3, nrow(NCI60_4arrays[[3]])), 
+             rep(4, nrow(NCI60_4arrays[[4]]))), pch = 16,
      xlab = paste0("Dim 3 (", round(eig[3,2], 2), "%)"),
      ylab = paste0("Dim 4 (", round(eig[4,2], 2), "%)"),
      xlim = c((min(res.mcia$mcoa$Tco$SV3)-0.1), 
@@ -244,7 +261,10 @@ plot(res.mcia$mcoa$Tco$SV3, res.mcia$mcoa$Tco$SV4,
 grid()
 abline(v=0, lty = 2)
 abline(h=0, lty = 2)
-text(res.mcia$mcoa$Tco$SV3[c(idx3, idx4)], res.mcia$mcoa$Tco$SV4[c(idx3, idx4)], gsub("\\..*", "", rownames(res.mcia$mcoa$axis)[c(idx3, idx4)]), pos = 1, cex = 0.5)
+text(res.mcia$mcoa$Tco$SV3[c(idx3, idx4)], 
+     res.mcia$mcoa$Tco$SV4[c(idx3, idx4)], 
+     gsub("\\..*", "", rownames(res.mcia$mcoa$axis)[c(idx3, idx4)]), 
+     pos = 1, cex = 0.5)
 ```
 
 En este sentido, dado que las líneas celulares del melanoma tienen un gran peso en el lado positivo del eje horizontal en el primer panel, el melanoma correspondiente los genes altamente expresados están en la misma dirección. Así pues, a continuación vamos a seleccionar los genes asociados al melanoma según la coordenada de los genes en ese espacio (la primera columna representa los nombres de los genes, mientras que las siguientes columnas indican qué genes se identifican en qué plataformas, y la última columna es una estadística del número total de plataformas que identifican el gen correspondiente en la región seleccionada):
@@ -266,7 +286,8 @@ gen_CO1 <- selectVar(res.mcia, a1.lim=c(-Inf, -0.9), a2.lim = c(-Inf, -0.9))
 gen_CO1$db_n <- rowSums(gen_CO1[,2:5], na.rm = TRUE)
 gen_CO1[nrow(gen_CO1)+1, 2:5] <- colSums(gen_CO1[,2:5], na.rm = TRUE)
 
-gen_CO2 <- selectVar(res.mcia, axis1 = 3, axis2 = 4, a1.lim=c(-Inf, -0.8), a2.lim = c(-Inf, -0.8))
+gen_CO2 <- selectVar(res.mcia, axis1 = 3, axis2 = 4, 
+                     a1.lim=c(-Inf, -0.8), a2.lim = c(-Inf, -0.8))
 gen_CO2$db_n <- rowSums(gen_CO2[,2:5], na.rm = TRUE)
 gen_CO2[nrow(gen_CO2)+1, 2:5] <- colSums(gen_CO2[,2:5], na.rm = TRUE)
 
@@ -310,9 +331,11 @@ Lo mismo para `Agilent` como plataforma que menos peso tiene en las dimensiones 
 Es obvio que estas diferencias no son muy pronunciadas, pero ya se había comentado anteriormente que parecía que ninguna plataforma aportaba un peso muy distinto en ninguna de las dimensiones inspeccionadas respeto a las otras plataformas (lo que tiene lógica, ya que al fin y al cabo son medidas muy similares (*microarrays*) realizadas en las mismas muestras). 
 
 ```{r}
-plotVar(res.mcia, var=c("S100B", "S100A1", "FAM167B", "GMFG", "ITM2A"), var.lab=TRUE, axes = 1:2)
+plotVar(res.mcia, var=c("S100B", "S100A1", "FAM167B", "GMFG", "ITM2A"), 
+        var.lab=TRUE, axes = 1:2)
 
-plotVar(res.mcia, var=c("S100B", "S100A1", "FAM167B", "GMFG", "ITM2A"), var.lab=TRUE, axes = 3:4)
+plotVar(res.mcia, var=c("S100B", "S100A1", "FAM167B", "GMFG", "ITM2A"), 
+        var.lab=TRUE, axes = 3:4)
 ```
 
 
@@ -421,6 +444,56 @@ fviz_mfa_var(res.mfa, "quanti.var", axes = c(3, 4), palette = "jco",
 
 
 # DIABLO (mixOmics)
+
+No puedo proceder porqué obtengo el error `Error : length of 'dimnames' [1] not equal to array extent`. Parece que es un problema de como se estructura la lista de datos `X`, pero no consigo averiguar como solucionarlo. Preguntar al profesor.
+
+```{r}
+library(mixOmics)
+```
+
+
+Los datos deben estar en una lista compuesta por distintos “data frames”, una por cada tipo de datos. Las muestras se situan en las filas y las variables en las columnas.   
+En el caso de querer hacer un análisis supervisado, además también necesitará un factor referente a la clase a la que pertenece cada muestra, así como dividir el conjunto de datos en "training set" y "test set". En este caso voy a aplicar un análisis supervisado, siendo la variable "tipo de cáncer" la que define los grupos y voy a separar las muestras en 2/3 para el "training set" y 1/3 para el "test set".
+
+```{r, eval=FALSE}
+set.seed(2020)
+train <- sample(1:nrow(NCI60_df), 40)
+X <- lapply(NCI60_4arrays, "[", train)
+sapply(X, dim)
+all(apply((x <- sapply(X, colnames))[,-1], 2, function(y)
+    identical(y, x[,1])))
+Y <- cancer_type[train]
+summary(Y)
+```
+
+## Número de variables a seleccionar por conjunto de datos y componente
+
+```{r, eval=FALSE}
+test.keepX = list(
+  agilent = seq(5,10,50), hgu133 = seq(5,10,50), 
+  hgu133p2 = seq(5,10,50), hgu95 = seq(5,10,50))
+
+set.seed(123)
+tune = tune.block.splsda(
+  X = NCI60_4arrays, Y = cancer_type, ncomp = 2, 
+  test.keepX = test.keepX, 
+  design = matrix(1, 
+                  ncol = length(X), 
+                  nrow = length(X), 
+                  dimnames = list(names(X),
+                                  names(X))), 
+  validation = "loo")
+```
+
+```{r, eval=FALSE}
+test.keepX = list(
+  agilent = seq(5,5,5,5), hgu133 = seq(5,5,5,5), 
+  hgu133p2 = seq(5,5,5,5), hgu95 = seq(5,5,5,5))
+
+res.diablo <- block.splsda(
+  NCI60_4arrays, cancer_type, keepX = list.keepX, 
+  ncomp = 4, scale = TRUE, mode = "regression")
+```
 
 # Conclusiones
 
