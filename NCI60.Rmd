@@ -411,7 +411,7 @@ fviz_contrib(res.mfa, "group", axes = 4)
 
 También en este caso parece que todos los conjuntos de datos presentan un peso similar en las 3 primeras dimensiones. Sin embargo, en este caso se observa que la plataforma `Agilent` es aquella con un mayor peso en la 4a dimensión, que es la que estaba separando las muestras RE de las LC.
 
-## Variables individuales
+### Variables individuales
 
 ```{r}
 fviz_mfa_var(res.mfa, "quanti.var", axes = c(1, 2), palette = "jco", 
