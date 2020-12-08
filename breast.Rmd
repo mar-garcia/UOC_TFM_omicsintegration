@@ -109,7 +109,7 @@ En el conjunto de datos “test”, un “BER” del 16% estaría indicando una 
 ## Muestras
 
 ```{r}
-plotIndiv(res.diablo, blocks = "consensus", ellipse = TRUE)
+plotIndiv(res.diablo, blocks = "consensus", ellipse = TRUE, legend = TRUE)
 ```
 
 En este caso, se observa como el primer componente separa principalmente las muestras "Basal" (azul) de las muestras "LumA" (gris), mientras que es el segundo componente separa las muestras "Her2" (naranja) del resto de muestras.
@@ -135,6 +135,7 @@ network(res.diablo, blocks = c(1,2,3),
         cutoff = 0.7, save = 'jpeg', name.save = 'breast_network')
 ```
 ![](/Users/lenovo/Documents/GitHub/UOC_TFM_omicsintegration/breast_cim.jpeg)
+![](/Users/lenovo/Documents/GitHub/UOC_TFM_omicsintegration/breast_network.jpeg)
 
 
 
