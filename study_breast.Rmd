@@ -1,0 +1,685 @@
+---
+title: "Cáncer de mama"
+author: "Mar Garcia-Aloy"
+output: 
+  html_document:
+    toc: true
+    number_sections: false
+    toc_float: true
+---
+
+```{r startpoint, include = FALSE}
+startpoint <- Sys.time()
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+```
+
+# Paquetes necesarios
+
+```{r libraries}
+library(mixOmics)
+library(omicade4)
+library(FactoMineR)
+library(factoextra)
+library(dplyr)
+library(kableExtra)
+library(VennDiagram)
+```
+
+
+# Descripción del estudio
+
+Se trata de un conjunto de datos que contiene medidas de la expresión o la abundancia de tres conjuntos de datos ómicos coincidentes: micro-RNA (miRNA), RNA mensajero (mRNA) y proteínas para 220 muestras de cáncer de mama. 
+
+
+```{r datos}
+data("breast.TCGA")
+```
+
+En este caso los datos se presentan en una lista compuesta de 2 sub-listas, una con las matrices de datos correspondientes al conjunto de datos "training set" (`data.train`) y la otra con las matrices de datos correspondientes al conjunto de datos "test set" (`data.test`):
+
+```{r data-summary-1}
+summary(breast.TCGA)
+```
+
+Como se puede observar, el conjunto de datos "training set" contiene 3 matrices (`mirna`, `mrna` y `protein`) y 1 factor (`subtype`), mientras que el conjunto de datos "test set" no contiene la matriz de datos `protein`, presentando así 2 matrices (`mirna` y `mrna`) y 1 factor (`subtype`):
+
+```{r data-summary-2}
+summary(breast.TCGA$data.train)
+lapply(breast.TCGA$data.train, dim)
+summary(breast.TCGA$data.train$subtype)
+
+summary(breast.TCGA$data.test)
+lapply(breast.TCGA$data.test, dim)
+summary(breast.TCGA$data.test$subtype)
+```
+
+
+# Preparación de los datos
+
+En referencia al algoritmo `DIABLO` del paquete `mixomics`, como NO se va a proceder al análisis de la capacidad predictiva de la clase de un nuevo grupo de muestras según los resultados del modelo construido [ya que no va a ser posible comprar los resultados de estos análisis de predicción con ninguno de los otros 2 algoritmos (`MCIA` y `MFA`), porqué no ofrecen ninguna función con finalidades similares al ser algoritmos diseñados para la realización de análisis no supervisados], se opta por juntar todas las muestras disponibles en un único conjunto de datos.
+
+```{r datos-diablo}
+prt <- matrix(nrow = nrow(breast.TCGA$data.test$mirna),
+              ncol = ncol(breast.TCGA$data.train$protein))
+rownames(prt) <- rownames(breast.TCGA$data.test$mirna)
+colnames(prt) <- colnames(breast.TCGA$data.train$protein)
+data.diablo <- list(miRNA = rbind(breast.TCGA$data.train$mirna, breast.TCGA$data.test$mirna),
+                    mRNA = rbind(breast.TCGA$data.train$mrna, breast.TCGA$data.test$mrna), 
+                    protein = rbind(breast.TCGA$data.train$protein, prt))
+rm(prt)
+data.diablo$miRNA[1:5, 1:5]
+data.diablo$mRNA[1:5, 1:5]
+data.diablo$protein[1:5, 1:5]
+```
+
+El algoritmo `MCIA` del paquete `omicade4` no permite trabajar con valores “missing”, por lo que en este caso se ha optado por excluir los datos referentes a las proteínas, ya que estos no fueron medidos en todas las muestras.
+
+```{r datos-mcia}
+data.mcia <- list(
+  mirna = t(rbind(
+    breast.TCGA$data.train$mirna, breast.TCGA$data.test$mirna)),
+  mrna =  t(rbind(
+    breast.TCGA$data.train$mrna, breast.TCGA$data.test$mrna))
+)
+data.mcia$mirna[1:5, 1:5]
+data.mcia$mrna[1:5, 1:5]
+```
+
+Para el algoritmo `MFA` del paquete `FactorMiner` se van a usar todas las variables como activas, a excepción del tipo de cáncer que se va a usar como variable suplementaria. 
+
+```{r datos-mfa}
+breast1 <- data.frame(t(do.call("cbind", breast.TCGA[[1]])))
+breast2 <- data.frame(t(do.call("cbind", breast.TCGA[[2]])))
+data.mfa <- merge(breast1, breast2, by = "row.names", all = TRUE)
+rownames(data.mfa) <- data.mfa$Row.names
+data.mfa <- data.mfa[,-1]
+data.mfa <- t(data.mfa)
+order.cols <- c(colnames(breast.TCGA$data.train$mirna),
+                colnames(breast.TCGA$data.train$mrna),
+                colnames(breast.TCGA$data.train$protein), "subtype")
+data.mfa <- data.frame(data.mfa[,match(order.cols, colnames(data.mfa))])
+data.mfa <- data.frame(data.mfa)
+rm(breast1, breast2, order.cols)
+data.mfa$subtype <- factor(data.mfa$subtype, 
+                           labels = c("Basal", "Her2", "LumA"))
+data.mfa[1:5, 1:5]
+```
+
+
+# Ejecución del modelo
+
+```{r modelo}
+res.diablo <- block.splsda(
+  X = data.diablo, 
+  Y = c(as.character(breast.TCGA$data.train$subtype), 
+        as.character(breast.TCGA$data.test$subtype)), 
+  keepX = list(miRNA =   c(56, 6, 5, 5),
+               mRNA =    c(14,25, 5, 5), 
+               protein = c(17, 4, 5, 5)), 
+  ncomp = 4, scale = TRUE, mode = "regression")
+
+res.mcia <- mcia(data.mcia, cia.nf = 4)
+
+res.mfa <- MFA(data.mfa, 
+               group = c(ncol(breast.TCGA$data.train[[1]]), 
+                         ncol(breast.TCGA$data.train[[2]]), 
+                         ncol(breast.TCGA$data.train[[3]]), 1), 
+               type = c(rep("s", 3), "n"),
+               ncp = 4,
+               name.group = names(breast.TCGA$data.train),
+               num.group.sup = c(4),
+               graph = FALSE)
+```
+
+
+# Valores propios y varianza explicada
+
+```{r varianza}
+eig.mcia <- data.frame(
+  eigenvalue = round(res.mcia$mcoa$pseudoeig, 3),
+  "percentage of variance" = round(res.mcia$mcoa$pseudoeig / 
+    sum(res.mcia$mcoa$pseudoeig)*100, 1),
+  "cumulative percentage of variance" = NA)
+for(i in 1:nrow(eig.mcia)){
+  eig.mcia[i,3] <- round(sum(eig.mcia[1:i, 2]), 1)
+}
+rownames(eig.mcia) <- paste("comp", seq(nrow(eig.mcia)))
+eig.mcia[1:5,] %>%
+  kbl() %>%
+  kable_minimal()
+
+eig.mfa <- res.mfa$eig
+eig.mfa[, 1] <- round(eig.mfa[, 1], 3)
+eig.mfa[, 2] <- round(eig.mfa[, 2], 1)
+eig.mfa[, 3] <- round(eig.mfa[, 3], 1)
+eig.mfa[1:5,] %>%
+  kbl() %>%
+  kable_minimal()
+
+par(mar = c(4, 4, 1, 0))
+barplot(eig.mcia[1:10, 2], names.arg = seq(10), las = 1, 
+        xlab = "Dimension", ylab = "% of explained variance")
+
+fviz_screeplot(res.mfa)
+```
+
+
+# Muestras
+
+```{r muestras}
+plot(1, 1)
+legend("bottom", levels(data.mfa$subtype), pch = 16,
+       inset = c(0, 1), xpd = TRUE, horiz = TRUE, bty = "n", col = 2:4)
+
+plotIndiv(res.diablo, blocks = "consensus", comp = c(1, 2), 
+          ellipse = TRUE, legend = FALSE, col = 2:4)
+plotIndiv(res.diablo, blocks = "consensus", comp = c(3, 4), 
+          ellipse = TRUE, legend = FALSE, col = 2:4)
+
+par(mar = c(4, 4, 1, 1))
+plot(res.mcia$mcoa$SynVar$SynVar1, res.mcia$mcoa$SynVar$SynVar2, 
+     col = c(2:4)[data.mfa$subtype], pch = 16,
+     xlab = paste0("Dim 1 (", round(eig.mcia[1, 2], 2), "%)"),
+     ylab = paste0("Dim 2 (", round(eig.mcia[2, 2], 2), "%)"))
+grid()
+abline(v=0, lty = 2)
+abline(h=0, lty = 2)
+
+plot(res.mcia$mcoa$SynVar$SynVar3, res.mcia$mcoa$SynVar$SynVar4, 
+     col = c(2:4)[data.mfa$subtype], pch = 16,
+     xlab = paste0("Dim 3 (", round(eig.mcia[3, 2], 2), "%)"),
+     ylab = paste0("Dim 4 (", round(eig.mcia[4, 2], 2), "%)"))
+grid()
+abline(v=0, lty = 2)
+abline(h=0, lty = 2)
+
+
+plot.MFA(res.mfa, axes = c(1, 2), choix="ind", 
+     lab.ind = FALSE, habillage = "subtype")
+plot.MFA(res.mfa, axes = c(3, 4), choix="ind", 
+     lab.ind = FALSE, habillage = "subtype")
+plot.MFA(res.mfa, axes = c(1, 4), choix="ind", 
+     lab.ind = FALSE, habillage = "subtype")
+```
+
+
+# Variables
+
+## Variables agrupadas
+
+```{r var-agrup}
+par(mar = c(4, 4, 1, 1))
+plot(res.diablo$weights$comp1, res.diablo$weights$comp2,
+     xlim = c(0, 1), ylim = c(0, 1), col = 2:4, pch = 16,
+     xlab = "Dim 1", ylab = "Dim 2")
+grid()
+abline(v=0, lty = 2)
+abline(h=0, lty = 2)
+text(res.diablo$weights$comp1, res.diablo$weights$comp2, 
+     rownames(res.diablo$weights), pos = 1, col = 2:4, cex = 0.8)
+
+plot(res.diablo$weights$comp3, res.diablo$weights$comp4,
+     xlim = c(0, 1), ylim = c(0, 1), col = 2:4, pch = 16,
+     xlab = "Dim 3", ylab = "Dim 4")
+grid()
+abline(v=0, lty = 2)
+abline(h=0, lty = 2)
+text(res.diablo$weights$comp3, res.diablo$weights$comp4, 
+     rownames(res.diablo$weights), pos = 1, col = 2:4, cex = 0.8)
+
+
+plot(res.mcia$mcoa$cov2$cov21, res.mcia$mcoa$cov2$cov22, 
+     xlim = c(0,max(max(res.mcia$mcoa$cov2$cov21)) + 0.1), 
+     ylim = c(0,max(res.mcia$mcoa$cov2$cov22) + 0.05), 
+     col = 2:4, pch = 16,
+     xlab = "pseudoeig 1", ylab = "pseudoeig 2")
+grid()
+abline(v=0, lty = 2)
+abline(h=0, lty = 2)
+text(res.mcia$mcoa$cov2$cov21, res.mcia$mcoa$cov2$cov22, 
+     rownames(res.mcia$mcoa$cov2), pos = 1, col = 2:4, cex = 0.8)
+
+plot(res.mcia$mcoa$cov2$cov23, res.mcia$mcoa$cov2$cov24, 
+     xlim = c(0,max(max(res.mcia$mcoa$cov2$cov23)) + 0.02), 
+     ylim = c(0,max(res.mcia$mcoa$cov2$cov24) + 0.02), 
+     col = 2:4, pch = 16,
+     xlab = "pseudoeig 3", ylab = "pseudoeig 4")
+grid()
+abline(v = 0, lty = 2)
+abline(h = 0, lty = 2)
+text(res.mcia$mcoa$cov2$cov23, res.mcia$mcoa$cov2$cov24, 
+     rownames(res.mcia$mcoa$cov2), pos = 1, col = 2:4, cex = 0.8)
+
+plot.MFA(res.mfa, choix = "group", axes = 1:2)
+plot.MFA(res.mfa, choix = "group", axes = 3:4)
+fviz_contrib(res.mfa, "group", axes = 1)
+fviz_contrib(res.mfa, "group", axes = 4)
+```
+
+
+## Variables individuales
+
+```{r var-indiv}
+plot(1, 1)
+legend("bottom", c("miRNA", "mRNA", "protein"), pch = 16,
+       inset = c(0, 1), xpd = TRUE, horiz = TRUE, bty = "n", 
+       col = c(2, 3, 4))
+
+mixOmics::plotVar(res.diablo, comp = c(1, 2), 
+                  var.names = TRUE, cex = rep(2, 3), 
+                  legend = FALSE, col = c(2, 3, 4))
+mixOmics::plotVar(res.diablo, comp = c(3, 4), 
+                  var.names = TRUE, cex = rep(2, 3), 
+                  legend = FALSE, col = c(2, 3, 4))
+
+
+par(mar = c(4, 4, 1, 1))
+idx <- abs(res.mcia$mcoa$Tco$SV1) > 1
+plot(res.mcia$mcoa$Tco$SV1, res.mcia$mcoa$Tco$SV2, 
+     col = c(rep(2, nrow(data.mcia[[1]])), 
+             rep(3, nrow(data.mcia[[2]]))), pch = 16,
+     xlab = paste0("Dim 1 (", round(eig.mcia[1, 2], 2), "%)"),
+     ylab = paste0("Dim 2 (", round(eig.mcia[2, 2], 2), "%)"),
+     xlim = c((min(res.mcia$mcoa$Tco$SV1) - 0.1), 
+              (max(res.mcia$mcoa$Tco$SV1) + 0.1)),
+     ylim = c((min(res.mcia$mcoa$Tco$SV2) - 0.1), 
+              (max(res.mcia$mcoa$Tco$SV2) + 0.1)))
+grid()
+abline(v = 0, lty = 2)
+abline(h = 0, lty = 2)
+text(res.mcia$mcoa$Tco$SV1[idx], 
+     res.mcia$mcoa$Tco$SV2[idx], 
+     rownames(res.mcia$mcoa$axis)[idx], 
+     pos = 1, cex = 0.5)
+
+idx <- abs(res.mcia$mcoa$Tco$SV3) > 1 | abs(res.mcia$mcoa$Tco$SV4) > 1
+plot(res.mcia$mcoa$Tco$SV3, res.mcia$mcoa$Tco$SV4, 
+     col = c(rep(2, nrow(data.mcia[[1]])), 
+             rep(3, nrow(data.mcia[[2]]))), pch = 16,
+     xlab = paste0("Dim 3 (", round(eig.mcia[3, 2], 2), "%)"),
+     ylab = paste0("Dim 4 (", round(eig.mcia[4, 2], 2), "%)"),
+     xlim = c((min(res.mcia$mcoa$Tco$SV3) - 0.1), 
+              (max(res.mcia$mcoa$Tco$SV3) + 0.1)),
+     ylim = c((min(res.mcia$mcoa$Tco$SV4) - 0.1), 
+              (max(res.mcia$mcoa$Tco$SV4) + 0.1)))
+grid()
+abline(v = 0, lty = 2)
+abline(h = 0, lty = 2)
+text(res.mcia$mcoa$Tco$SV3[idx], 
+     res.mcia$mcoa$Tco$SV4[idx], 
+     rownames(res.mcia$mcoa$axis)[idx], 
+     pos = 1, cex = 0.5)
+
+
+fviz_mfa_var(res.mfa, "quanti.var", axes = c(1, 2), repel = TRUE,
+             geom = "point", legend = "bottom")
+fviz_mfa_var(res.mfa, "quanti.var", axes = c(3, 4), repel = TRUE,
+             geom = "point", legend = "bottom")
+```
+
+### "Basal" versus "LumA"
+
+```{r var-dim1}
+plotLoadings(res.diablo, comp = 1, contrib = "max")
+
+bk.mcia <- res.mcia$mcoa$Tco
+rownames(bk.mcia) <- gsub("\\.", "-", rownames(bk.mcia))
+bk.mcia$color <- 3
+bk.mcia$color[1:nrow(data.mcia[[1]])] <- 2
+par(mar = c(2.5, 6, 0.5, 1))
+bk.mcia <- bk.mcia[order(abs(bk.mcia$SV1), decreasing = T), ]
+barplot(bk.mcia$SV1[1:40], horiz = TRUE, 
+        col = bk.mcia$color[1:40],
+        names.arg = rownames(bk.mcia)[1:40], las = 1, cex.names = 0.5)
+
+fviz_contrib(res.mfa, choice = "quanti.var", axes = 1, top = 30)
+fviz_mfa_var(res.mfa, "quanti.var", axes = c(1, 4), 
+             repel = TRUE,
+             geom = c("point", "text"), legend = "bottom", 
+             select.var = list(contrib = 30))
+
+
+bk.diablo <- data.frame(
+  variable = c(names(which(abs(res.diablo$loadings$miRNA[,1]) > 0)),
+               names(which(abs(res.diablo$loadings$mRNA[,1]) > 0)),
+               names(which(abs(res.diablo$loadings$protein[,1]) > 0))),
+  diablo = 1)
+
+bk.mcia <- res.mcia$mcoa$Tco
+rownames(bk.mcia) <- gsub("\\.", "-", rownames(bk.mcia))
+bk.mcia <- bk.mcia[order(abs(bk.mcia$SV1), decreasing = T), ]
+bk.mcia <- data.frame(
+  variable = rownames(bk.mcia)[1:(56+14)],
+  mcia = 1)
+
+bk.mfa <- facto_summarize(res.mfa, element = "quanti.var", result = "contrib", 
+                          axes = 1)
+bk.mfa <- bk.mfa[order(bk.mfa$contrib, decreasing = T), ]
+bk.mfa <- data.frame(
+  variable = bk.mfa$name[1:(56+14+17)],
+  mfa = 1)
+bk.mfa$variable <- gsub("\\.", "-", bk.mfa$variable)
+
+bk <- merge(bk.diablo, bk.mcia, by = "variable", all = TRUE)
+bk <- merge(bk, bk.mfa, by = "variable", all = TRUE)
+bk[is.na(bk)] <- 0
+bk$class <- NA
+bk$class[bk$variable %in% colnames(data.diablo$miRNA)] <- "miRNA"
+bk$class[bk$variable %in% colnames(data.diablo$mRNA)] <- "mRNA"
+bk$class[bk$variable %in% colnames(data.diablo$protein)] <- "protein"
+
+bk1 <- bk[bk$class != "protein", ]
+grid.newpage()
+draw.triple.venn(area1 = sum(bk1$diablo == 1), 
+                 area2 = sum(bk1$mcia == 1), 
+                 area3 = sum(bk1$mfa == 1),
+                 n12 = sum(bk1$diablo == 1 & bk1$mcia == 1),
+                 n23 = sum(bk1$mcia == 1 & bk1$mfa == 1),
+                 n13 = sum(bk1$diablo == 1 & bk1$mfa == 1), 
+                 n123 = sum(bk1$diablo == 1 & bk1$mcia == 1 & bk1$mfa == 1),
+                 category = c("DIABLO", "MCIA", "MFA"))
+
+bk2 <- bk[bk$class == "protein", ]
+grid.newpage()
+draw.pairwise.venn(area1 = sum(bk2$diablo == 1),
+                   area2 = sum(bk2$mfa == 1),
+                   cross.area = sum(bk2$diablo == 1 & bk2$mfa == 1),
+                   category = c("DIABLO", "MFA"))
+```
+
+Entre todos los miRNA y mRNA con mayor peso en la primera dimensión de al menos uno de los tres modelos generados, el `r round((sum(bk1$diablo == 1 & bk1$mcia == 1 & bk1$mfa == 1)*100)/nrow(bk1))`% (n=`r sum(bk1$diablo == 1 & bk1$mcia == 1 & bk1$mfa == 1)`) coincidieron entre todos ellos. En concreto, se trata de n=`r sum(bk1$class[bk1$diablo == 1 & bk1$mcia == 1 & bk1$mfa == 1] == "miRNA")` miRNA (`r bk1$variable[bk1$diablo == 1 & bk1$mcia == 1 & bk1$mfa == 1 & bk1$class == "miRNA"]`) y n=`r sum(bk1$class[bk1$diablo == 1 & bk1$mcia == 1 & bk1$mfa == 1] == "mRNA")` mRNA (`r bk1$variable[bk1$diablo == 1 & bk1$mcia == 1 & bk1$mfa == 1 & bk1$class == "mRNA"]`).  
+Por otro lado, un total de n=`r (sum(bk1$diablo == 1 & bk1$mcia == 0 & bk1$mfa == 0) + sum(bk1$diablo == 0 & bk1$mcia == 1 & bk1$mfa == 0) + sum(bk1$diablo == 0 & bk1$mcia == 0 & bk1$mfa == 1))` (`r round(((sum(bk1$diablo == 1 & bk1$mcia == 0 & bk1$mfa == 0) + sum(bk1$diablo == 0 & bk1$mcia == 1 & bk1$mfa == 0) + sum(bk1$diablo == 0 & bk1$mcia == 0 & bk1$mfa == 1))*100)/nrow(bk1))`%) miRNA y mRNA únicamente fueron seleccionados para 1 único modelo, siendo el "MCIA" aquel con un mayor número de miRNA y mRNA discriminantes no coincidentes con ninguno de los otros dos algoritmos (n=`r sum(bk1$diablo == 0 & bk1$mcia == 1 & bk1$mfa == 0)`). Así pues, parece que hay un mayor grado de homogeneidad entre los modelos generados por los algoritmos "DIABLO" y "MFA".   
+  
+
+### "Her2"
+
+```{r var-her2}
+plotLoadings(res.diablo, comp = 2, contrib = "max")
+
+fviz_contrib(res.mfa, choice = "quanti.var", axes = 4, top = 35)
+
+
+bk.diablo <- data.frame(
+  variable = c(names(which(abs(res.diablo$loadings$miRNA[,2]) > 0)),
+               names(which(abs(res.diablo$loadings$mRNA[,2]) > 0)),
+               names(which(abs(res.diablo$loadings$protein[,2]) > 0))),
+  diablo = 1)
+
+bk.mfa <- facto_summarize(res.mfa, element = "quanti.var", result = "contrib", 
+                          axes = 4)
+bk.mfa <- bk.mfa[order(bk.mfa$contrib, decreasing = T), ]
+bk.mfa <- data.frame(
+  variable = bk.mfa$name[1:35],
+  mfa = 1)
+bk.mfa$variable <- gsub("\\.", "-", bk.mfa$variable)
+
+bk <- merge(bk.diablo, bk.mfa, by = "variable", all = TRUE)
+bk[is.na(bk)] <- 0
+bk$class <- NA
+bk$class[bk$variable %in% colnames(data.diablo$miRNA)] <- "miRNA"
+bk$class[bk$variable %in% colnames(data.diablo$mRNA)] <- "mRNA"
+bk$class[bk$variable %in% colnames(data.diablo$protein)] <- "protein"
+
+grid.newpage()
+draw.pairwise.venn(area1 = sum(bk$diablo == 1), 
+                 area2 = sum(bk$mfa == 1), 
+                 cross.area = sum(bk$diablo == 1 & bk$mfa == 1),
+                 category = c("DIABLO", "MFA"))
+```
+
+En este caso la coincidencia de variables discriminantes para ambos modelos ya fue menor (`r round((sum(bk$diablo == 1 & bk$mfa == 1)*100)/nrow(bk))`%, n=`r sum(bk$diablo == 1 & bk$mfa == 1)`): `r sum(bk$class[bk$diablo == 1 & bk$mfa == 1] == "miRNA")` miRNA (`r bk$variable[bk$diablo == 1 & bk$mfa == 1 & bk$class == "miRNA"]`), `r sum(bk$class[bk$diablo == 1 & bk$mfa == 1] == "mRNA")` mRNA (`r bk$variable[bk$diablo == 1 & bk$mfa == 1 & bk$class == "mRNA"]`) y `r sum(bk$class[bk$diablo == 1 & bk$mfa == 1] == "protein")` proteínas (`r bk$variable[bk$diablo == 1 & bk$mfa == 1 & bk$class == "protein"]`).
+
+
+# Anexo 1: DIABLO modelo non-sparse plsda
+
+```{r anexo-1}
+res.diablo.v2 <- block.plsda(
+  X = data.diablo, 
+  Y = c(breast.TCGA$data.train$subtype, breast.TCGA$data.test$subtype),
+  ncomp = 4, scale = TRUE, mode = "regression")
+plotIndiv(res.diablo.v2, blocks = "consensus", 
+          ellipse = TRUE, legend = FALSE, col = 2:4, comp = c(1, 2))
+plotIndiv(res.diablo.v2, blocks = "consensus", 
+          ellipse = TRUE, legend = FALSE, col = 2:4, comp = c(3, 4))
+```
+
+
+# Anexo 2: MCIA con todas las variables en las muestras del "training set"
+
+```{r anexo-2}
+data.mcia.v2 <- list(mirna = t(breast.TCGA$data.train$mirna), 
+                     mrna = t(breast.TCGA$data.train$mrna), 
+                     protein = t(breast.TCGA$data.train$protein))
+data.mcia.v2$mirna[1:5, 1:5]
+data.mcia.v2$mrna[1:5, 1:5]
+data.mcia.v2$protein[1:5, 1:5]
+
+res.mcia.v2 <- mcia(data.mcia.v2, cia.nf = 4)
+
+eig.mcia.v2 <- data.frame(
+  eigenvalue = round(res.mcia.v2$mcoa$pseudoeig, 3),
+  "percentage of variance" = round(res.mcia.v2$mcoa$pseudoeig / 
+    sum(res.mcia.v2$mcoa$pseudoeig)*100, 1),
+  "cumulative percentage of variance" = NA)
+for(i in 1:nrow(eig.mcia.v2)){
+  eig.mcia.v2[i,3] <- round(sum(eig.mcia.v2[1:i,2]), 1)
+}
+rownames(eig.mcia.v2) <- paste("comp", seq(nrow(eig.mcia.v2)))
+eig.mcia.v2[1:5,] %>%
+  kbl() %>%
+  kable_minimal()
+
+par(mar = c(4, 4, 1, 0))
+barplot(eig.mcia.v2[1:10, 2], names.arg = seq(10), las = 1, 
+        xlab = "Dimension", ylab = "% of explained variance")
+
+
+par(mar = c(4, 4, 1, 1))
+plot(res.mcia.v2$mcoa$SynVar$SynVar1, res.mcia.v2$mcoa$SynVar$SynVar2, 
+     col = c(2:4)[data.mfa$subtype], pch = 16,
+     xlab = paste0("Dim 1 (", round(eig.mcia.v2[1, 2], 2), "%)"),
+     ylab = paste0("Dim 2 (", round(eig.mcia.v2[2, 2], 2), "%)"))
+grid()
+abline(v=0, lty = 2)
+abline(h=0, lty = 2)
+
+plot(res.mcia.v2$mcoa$SynVar$SynVar3, res.mcia.v2$mcoa$SynVar$SynVar4, 
+     col = c(2:4)[data.mfa$subtype], pch = 16,
+     xlab = paste0("Dim 3 (", round(eig.mcia.v2[3, 2], 2), "%)"),
+     ylab = paste0("Dim 4 (", round(eig.mcia.v2[4, 2], 2), "%)"))
+grid()
+abline(v=0, lty = 2)
+abline(h=0, lty = 2)
+
+
+plot(res.mcia.v2$mcoa$cov2$cov21, res.mcia.v2$mcoa$cov2$cov22, 
+     xlim = c(0,max(max(res.mcia.v2$mcoa$cov2$cov21)) + 0.1), 
+     ylim = c(0,max(res.mcia.v2$mcoa$cov2$cov22) + 0.05), 
+     col = 2:4, pch = 16,
+     xlab = "pseudoeig 1", ylab = "pseudoeig 2")
+grid()
+abline(v=0, lty = 2)
+abline(h=0, lty = 2)
+text(res.mcia.v2$mcoa$cov2$cov21, res.mcia.v2$mcoa$cov2$cov22, 
+     rownames(res.mcia.v2$mcoa$cov2), pos = 1, col = 2:4, cex = 0.8)
+
+plot(res.mcia.v2$mcoa$cov2$cov23, res.mcia.v2$mcoa$cov2$cov24, 
+     xlim = c(0, max(max(res.mcia.v2$mcoa$cov2$cov23)) + 0.02), 
+     ylim = c(0, max(res.mcia.v2$mcoa$cov2$cov24) + 0.02), 
+     col = 2:4, pch = 16,
+     xlab = "pseudoeig 3", ylab = "pseudoeig 4")
+grid()
+abline(v=0, lty = 2)
+abline(h=0, lty = 2)
+text(res.mcia.v2$mcoa$cov2$cov23, res.mcia.v2$mcoa$cov2$cov24, 
+     rownames(res.mcia.v2$mcoa$cov2), pos = 1, col = 2:4, cex = 0.8)
+
+
+par(mar = c(4, 4, 2, 1))
+idx <- abs(res.mcia.v2$mcoa$Tco$SV1) > 1
+plot(res.mcia.v2$mcoa$Tco$SV1, res.mcia.v2$mcoa$Tco$SV2, 
+     col = c(rep(2, nrow(data.mcia.v2[[1]])), 
+             rep(3, nrow(data.mcia.v2[[2]])),
+             rep(4, nrow(data.mcia.v2[[3]]))), pch = 16,
+     xlab = paste0("Dim 1 (", round(eig.mcia.v2[1, 2], 2), "%)"),
+     ylab = paste0("Dim 2 (", round(eig.mcia.v2[2, 2], 2), "%)"),
+     xlim = c((min(res.mcia.v2$mcoa$Tco$SV1) - 0.1), 
+              (max(res.mcia.v2$mcoa$Tco$SV1) + 0.1)),
+     ylim = c((min(res.mcia.v2$mcoa$Tco$SV2) - 0.1), 
+              (max(res.mcia.v2$mcoa$Tco$SV2) + 0.1)))
+grid()
+abline(v = 0, lty = 2)
+abline(h = 0, lty = 2)
+text(res.mcia.v2$mcoa$Tco$SV1[idx], 
+     res.mcia.v2$mcoa$Tco$SV2[idx], 
+     rownames(res.mcia.v2$mcoa$axis)[idx], 
+     pos = 1, cex = 0.5)
+legend("bottom", legend = c("miRNA", "mRNA", "protein"), pch = 16,
+       inset = c(0, 1), xpd = TRUE, horiz = TRUE, bty = "n", 
+       col = c(2, 3, 4))
+
+idx <- (res.mcia.v2$mcoa$Tco$SV3 < 0) & (res.mcia.v2$mcoa$Tco$SV4 > 0.5)
+plot(res.mcia.v2$mcoa$Tco$SV3, res.mcia.v2$mcoa$Tco$SV4, 
+     col = c(rep(2, nrow(data.mcia.v2[[1]])), 
+             rep(3, nrow(data.mcia.v2[[2]])),
+             rep(4, nrow(data.mcia.v2[[3]]))), pch = 16,
+     xlab = paste0("Dim 3 (", round(eig.mcia.v2[3, 2], 2), "%)"),
+     ylab = paste0("Dim 4 (", round(eig.mcia.v2[4, 2], 2), "%)"),
+     xlim = c((min(res.mcia.v2$mcoa$Tco$SV3) - 0.1), 
+              (max(res.mcia.v2$mcoa$Tco$SV3) + 0.1)),
+     ylim = c((min(res.mcia.v2$mcoa$Tco$SV4) - 0.1), 
+              (max(res.mcia.v2$mcoa$Tco$SV4) + 0.1)))
+grid()
+abline(v = 0, lty = 2)
+abline(h = 0, lty = 2)
+text(res.mcia.v2$mcoa$Tco$SV3[idx], 
+     res.mcia.v2$mcoa$Tco$SV4[idx], 
+     rownames(res.mcia.v2$mcoa$axis)[idx], 
+     pos = 1, cex = 0.5)
+
+
+bk.mcia <- res.mcia.v2$mcoa$Tco
+rownames(bk.mcia) <- gsub("\\.", "-", rownames(bk.mcia))
+bk.mcia$color <- 4
+bk.mcia$color[1:nrow(data.mcia.v2[[1]])] <- 2
+bk.mcia$color[
+  (nrow(data.mcia.v2[[1]])+1):
+    ((nrow(data.mcia.v2[[1]])+1)+(nrow(data.mcia.v2[[2]])))] <- 3
+par(mar = c(2.5, 6, 0.5, 1))
+bk.mcia <- bk.mcia[order(abs(bk.mcia$SV1), decreasing = T), ]
+barplot(bk.mcia$SV1[1:40], horiz = TRUE, col = bk.mcia$color[1:40],
+        names.arg = rownames(bk.mcia)[1:40], las = 1, cex.names = 0.5)
+legend("topright", legend = c("miRNA", "mRNA", "protein"), pch = 16,
+       col = c(2, 3, 4), bty = "n")
+
+
+bk.diablo <- data.frame(
+  variable = c(names(which(abs(res.diablo$loadings$miRNA[,1]) > 0)),
+               names(which(abs(res.diablo$loadings$mRNA[,1]) > 0)),
+               names(which(abs(res.diablo$loadings$protein[,1]) > 0))),
+  diablo = 1)
+bk.mcia <- res.mcia.v2$mcoa$Tco
+rownames(bk.mcia) <- gsub("\\.", "-", rownames(bk.mcia))
+bk.mcia <- bk.mcia[order(abs(bk.mcia$SV1), decreasing = T), ]
+bk.mcia <- data.frame(
+  variable = rownames(bk.mcia)[1:(56+14+17)],
+  mcia = 1)
+bk.mfa <- facto_summarize(res.mfa, element = "quanti.var", result = "contrib", 
+                          axes = 1)
+bk.mfa <- bk.mfa[order(bk.mfa$contrib, decreasing = T), ]
+bk.mfa <- data.frame(
+  variable = bk.mfa$name[1:(56+14+17)],
+  mfa = 1)
+bk.mfa$variable <- gsub("\\.", "-", bk.mfa$variable)
+bk <- merge(bk.diablo, bk.mcia, by = "variable", all = TRUE)
+bk <- merge(bk, bk.mfa, by = "variable", all = TRUE)
+bk[is.na(bk)] <- 0
+
+bk$class <- NA
+bk$class[bk$variable %in% colnames(data.diablo$miRNA)] <- "miRNA"
+bk$class[bk$variable %in% colnames(data.diablo$mRNA)] <- "mRNA"
+bk$class[bk$variable %in% colnames(data.diablo$protein)] <- "protein"
+
+grid.newpage()
+draw.triple.venn(area1 = sum(bk$diablo == 1), 
+                 area2 = sum(bk$mcia == 1), 
+                 area3 = sum(bk$mfa == 1),
+                 n12 = sum(bk$diablo == 1 & bk$mcia == 1),
+                 n23 = sum(bk$mcia == 1 & bk$mfa == 1),
+                 n13 = sum(bk$diablo == 1 & bk$mfa == 1), 
+                 n123 = sum(bk$diablo == 1 & bk$mcia == 1 & bk$mfa == 1),
+                 category = c("DIABLO", "MCIA", "MFA"))
+
+
+bk.mcia <- res.mcia.v2$mcoa$Tco
+rownames(bk.mcia) <- gsub("\\.", "-", rownames(bk.mcia))
+bk.mcia$color <- 4
+bk.mcia$color[1:nrow(data.mcia.v2[[1]])] <- 2
+bk.mcia$color[
+  (nrow(data.mcia.v2[[1]])+1):
+    ((nrow(data.mcia.v2[[1]])+1)+(nrow(data.mcia.v2[[2]])))] <- 3
+bk.mcia$select <- FALSE
+bk.mcia$select[(bk.mcia$SV3 < 0) & (bk.mcia$SV4 > 0)] <- TRUE
+bk.mcia <- bk.mcia[order(bk.mcia$SV3), ]
+bk.mcia$order3 <- seq(nrow(bk.mcia))
+bk.mcia <- bk.mcia[order(bk.mcia$SV4, decreasing = T), ]
+bk.mcia$order4 <- seq(nrow(bk.mcia))
+bk.mcia$order <- rowMeans(bk.mcia[,c("order3", "order4")])
+bk.mcia <- bk.mcia[order(bk.mcia$order), ]
+bk.mcia <- bk.mcia[bk.mcia$select,]
+par(mar = c(2.5, 6, 0.5, 1))
+barplot(bk.mcia$SV3[1:30], horiz = TRUE, col = bk.mcia$color[1:30],
+        names.arg = rownames(bk.mcia)[1:30], las = 1, cex.names = 0.5)
+legend("topleft", legend = c("miRNA", "mRNA", "protein"), pch = 16,
+       col = c(2, 3, 4), bty = "n")
+barplot(bk.mcia$SV4[1:30], horiz = TRUE, col = bk.mcia$color[1:30],
+        names.arg = rownames(bk.mcia)[1:30], las = 1, cex.names = 0.5)
+
+
+bk.diablo <- data.frame(
+  variable = c(names(which(abs(res.diablo$loadings$miRNA[,2]) > 0)),
+               names(which(abs(res.diablo$loadings$mRNA[,2]) > 0)),
+               names(which(abs(res.diablo$loadings$protein[,2]) > 0))),
+  diablo = 1)
+
+bk.mcia <- bk.mcia[order(bk.mcia$order), ]
+bk.mcia <- data.frame(
+  variable = rownames(bk.mcia)[1:35],
+  mcia = 1)
+
+bk.mfa <- facto_summarize(res.mfa, element = "quanti.var", result = "contrib", 
+                          axes = 4)
+bk.mfa <- bk.mfa[order(bk.mfa$contrib, decreasing = T), ]
+bk.mfa <- data.frame(
+  variable = bk.mfa$name[1:30],
+  mfa = 1)
+bk.mfa$variable <- gsub("\\.", "-", bk.mfa$variable)
+
+bk <- merge(bk.diablo, bk.mcia, by = "variable", all = TRUE)
+bk <- merge(bk, bk.mfa, by = "variable", all = TRUE)
+bk[is.na(bk)] <- 0
+
+bk$class <- NA
+bk$class[bk$variable %in% colnames(data.diablo$miRNA)] <- "miRNA"
+bk$class[bk$variable %in% colnames(data.diablo$mRNA)] <- "mRNA"
+bk$class[bk$variable %in% colnames(data.diablo$protein)] <- "protein"
+
+grid.newpage()
+draw.triple.venn(area1 = sum(bk$diablo == 1), 
+                 area2 = sum(bk$mcia == 1), 
+                 area3 = sum(bk$mfa == 1),
+                 n12 = sum(bk$diablo == 1 & bk$mcia == 1),
+                 n23 = sum(bk$mcia == 1 & bk$mfa == 1),
+                 n13 = sum(bk$diablo == 1 & bk$mfa == 1), 
+                 n123 = sum(bk$diablo == 1 & bk$mcia == 1 & bk$mfa == 1),
+                 category = c("DIABLO", "MCIA", "MFA"))
+```
+
+
+# Session information
+
+```{r session}
+Sys.time()-startpoint
+devtools::session_info()
+```

@@ -1,0 +1,121 @@
+---
+title: "mixOmics: DIABLO"
+author: "Mar Garcia-Aloy"
+output: 
+  html_document:
+    toc: true
+    number_sections: false
+    toc_float: true
+---
+
+```{r startpoint, include = FALSE}
+startpoint <- Sys.time()
+```
+
+# Preliminares
+
+```{r preliminares}
+library(mixOmics)
+```
+
+# Preparación de los datos
+
+```{r datos}
+data(breast.TCGA)
+```
+
+# Ajuste de parámetros: número de variables a seleccionar por conjunto de datos y componente
+
+```{r parametros}
+set.seed(123)
+tune = tune.block.splsda(
+  X = list(mRNA    = breast.TCGA$data.train$mrna, 
+           miRNA   = breast.TCGA$data.train$mirna, 
+           protein = breast.TCGA$data.train$protein), 
+  Y = breast.TCGA$data.train$subtype, 
+  test.keepX = list(
+    mRNA    = seq(10, 70, 20), 
+    miRNA   = seq(10, 30, 10), 
+    protein = seq(5,  20,  5)), 
+  design = matrix(1, 
+                  ncol = length(breast.TCGA$data.train), 
+                  nrow = length(breast.TCGA$data.train), 
+                  dimnames = list(names(breast.TCGA$data.train), 
+                                  names(breast.TCGA$data.train))), 
+  ncomp = 2, scale = TRUE, nrepeat = 3)
+tune$choice.keepX
+```
+
+
+# Ejecución del modelo
+
+```{r modelo}
+res.diablo <- block.splsda(
+  X = list(mRNA    = breast.TCGA$data.train$mrna, 
+           miRNA   = breast.TCGA$data.train$mirna, 
+           protein = breast.TCGA$data.train$protein), 
+  Y = breast.TCGA$data.train$subtype, 
+  keepX = list(mRNA = c(10, 50), miRNA = c(10, 10), protein = c(5, 5)), 
+  ncomp = 2, scale = TRUE, mode = "regression")
+
+res.diablo$design
+```
+
+# Representaciones gráficas
+
+```{r graficos}
+plotIndiv(res.diablo, ind.names = FALSE, legend=TRUE) 
+plotIndiv(res.diablo, blocks = "consensus", ellipse = TRUE)
+
+plotVar(res.diablo, legend = TRUE)
+plotLoadings(res.diablo, comp = 2, contrib = "max")
+plotDiablo(res.diablo, ncomp = 1)
+circosPlot(res.diablo, cutoff = 0.7)
+
+network(res.diablo, blocks = c(1, 2, 3),
+        color.node = c('darkorchid', 'brown1', 'lightgreen'), 
+        cutoff = 0.7, save = 'jpeg', name.save = 'DIABLOnetwork')
+
+jpeg(filename="DIABLOcim.jpeg")
+cimDiablo(res.diablo, 
+          color.blocks = c('darkorchid', 'brown1', 'lightgreen'), 
+          comp = 1, margin = c(8, 20), legend.position = "right")
+dev.off()
+```
+
+![](/Users/lenovo/Documents/GitHub/UOC_TFM_omicsintegration/DIABLOnetwork.jpeg)
+![](/Users/lenovo/Documents/GitHub/UOC_TFM_omicsintegration/DIABLOcim.jpeg)
+
+# Evaluación del modelo
+
+```{r evaluacion}
+set.seed(123)
+perf.diablo <- perf(res.diablo, validation = 'Mfold', folds = 5, 
+                    nrepeat = 10, 
+                    dist = 'centroids.dist')
+perf.diablo$MajorityVote.error.rate
+
+auroc(res.diablo, roc.block = "miRNA",   roc.comp = 1)
+auroc(res.diablo, roc.block = "mRNA",    roc.comp = 1, print = FALSE)
+auroc(res.diablo, roc.block = "protein", roc.comp = 1, print = FALSE)
+auroc(res.diablo, roc.block = "miRNA",   roc.comp = 2, print = FALSE)
+auroc(res.diablo, roc.block = "mRNA",    roc.comp = 2, print = FALSE)
+auroc(res.diablo, roc.block = "protein", roc.comp = 2, print = FALSE)
+
+
+pred.diablo <- predict(res.diablo, 
+                       newdata = list(
+                         mRNA = breast.TCGA$data.test$mrna, 
+                         miRNA = breast.TCGA$data.test$mirna))
+get.confusion_matrix(
+  truth = breast.TCGA$data.test$subtype, 
+  predicted = pred.diablo$MajorityVote$centroids.dist[,2])
+```
+
+
+# Session information
+
+```{r session}
+Sys.time()-startpoint
+devtools::session_info()
+```

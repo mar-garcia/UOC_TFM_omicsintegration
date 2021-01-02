@@ -1,0 +1,287 @@
+---
+title: "Vinos"
+author: "Mar Garcia-Aloy"
+output: 
+  html_document:
+    toc: true
+    number_sections: false
+    toc_float: true
+---
+
+```{r startpoint, include = FALSE}
+startpoint <- Sys.time()
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+```
+
+# Paquetes necesarios
+
+```{r libraries}
+library(mixOmics)
+library(omicade4)
+library(FactoMineR)
+library(factoextra)
+library(dplyr)
+library(kableExtra)
+library(VennDiagram)
+```
+
+
+# Descripción del estudio
+
+Los datos se encuentran en un "data.frame" en el que en las filas hay cada uno de los vinos (muestras) y en las columnas las distintas variables sensoriales medidas.
+
+```{r descripcion}
+data(wine)
+dim(wine)
+wine %>%
+  kbl() %>%
+  kable_minimal()
+table(wine$Label) %>%
+  kbl(caption = "Origen de los vinos") %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+table(wine$Soil) %>%
+  kbl(caption = "Tipo de suelo") %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+```
+
+# Preparación de los datos
+
+Como el algoritmo `DIABLO` se focaliza en la realización de análisis supervisados, es necesario una variable respuesta. En este caso se va a usar la variable “Overall.quality”.
+
+```{r datos}
+data.diablo <- list(
+  #origin = data.frame(wine[,1:2]),
+  odor_pre = data.frame(wine[,3:7]),
+  odor_post = data.frame(wine[,11:20]),
+  visual = data.frame(wine[,8:10]),
+  taste = data.frame(wine[,21:29])#,
+  #overall = data.frame(wine[,30:31])
+)
+sapply(data.diablo, dim)
+quality <- matrix(wine$Overall.quality)
+rownames(quality) <- rownames(wine)
+
+data.mcia <- list(
+  #origin = data.frame(t(wine[,1:2])),
+  odor_pre = data.frame(t(wine[,3:7])),
+  odor_post = data.frame(t(wine[,11:20])),
+  visual = data.frame(t(wine[,8:10])),
+  taste = data.frame(t(wine[,21:29]))#,
+  #overall = data.frame(t(wine[,30:31]))
+)
+sapply(data.mcia, dim)
+all(apply((x <- sapply(data.mcia, colnames))[,-1], 2, function(y)
+    identical(y, x[,1])))
+```
+
+
+Para la aplicación del algoritmo `MFA`, los grupos de “olores pre-agitación”, “olores post-agitación”, “percepciones visuales” y “variables de sabor” se consideran variables activas, mientras que los grupos de “origen del vino”, “tipo de suelo” (ambas agrupadas en la cateogría de variables llamada “origen”) y “apreciación de la degustación” se consideran variables suplementarias.
+
+```{r datos-mfa}
+data.mfa <- wine
+data.mfa[1:5, 1:5]
+```
+
+
+# Ejecución del modelo
+
+```{r modelo}
+res.diablo <- block.pls(
+  X = data.diablo, 
+  Y = quality, 
+  ncomp = 2, scale = TRUE, mode = "regression")
+
+res.mcia <- mcia(data.mcia, cia.nf = 2)
+
+res.mfa <- MFA(data.mfa, 
+               group = c(2, 5, 3, 10, 9, 2), 
+               type = c("n", "s", "s", "s", "s", "s"),
+               ncp = 2,
+               name.group = c("origin","odor.pre","visual",
+                              "odor.post", "taste", "overall"),
+               num.group.sup = c(1, 6),
+               graph = FALSE)
+```
+
+
+# Valores propios y varianza explicada
+
+```{r varianza}
+eig.mcia <- data.frame(
+  eigenvalue = round(res.mcia$mcoa$pseudoeig, 3),
+  "percentage of variance" = round(res.mcia$mcoa$pseudoeig / 
+    sum(res.mcia$mcoa$pseudoeig)*100, 1),
+  "cumulative percentage of variance" = NA)
+for(i in 1:nrow(eig.mcia)){
+  eig.mcia[i,3] <- round(sum(eig.mcia[1:i, 2]), 1)
+}
+rownames(eig.mcia) <- paste("comp", seq(nrow(eig.mcia)))
+eig.mcia[1:5,] %>%
+  kbl() %>%
+  kable_minimal()
+
+
+eig.mfa <- res.mfa$eig
+eig.mfa[, 1] <- round(eig.mfa[, 1], 3)
+eig.mfa[, 2] <- round(eig.mfa[, 2], 1)
+eig.mfa[, 3] <- round(eig.mfa[, 3], 1)
+eig.mfa[1:5,] %>%
+  kbl() %>%
+  kable_minimal()
+
+par(mar = c(4, 4, 1, 0))
+barplot(eig.mcia[1:10, 2], names.arg = seq(10), las = 1, 
+        xlab = "Dimension", ylab = "% of explained variance")
+
+fviz_screeplot(res.mfa)
+```
+
+# Variables
+
+## Variables agrupadas
+
+```{r variables-agrupadas}
+par(mar = c(4, 4, 1, 1))
+plot(res.diablo$weights$comp1, res.diablo$weights$comp2,
+     xlim = c(0, 1), ylim = c(0, 1), col = c(2, 4, 3, 6), pch = 16,
+     xlab = "Dim 1", ylab = "Dim 2")
+grid()
+abline(v=0, lty = 2)
+abline(h=0, lty = 2)
+text(res.diablo$weights$comp1, res.diablo$weights$comp2, 
+     rownames(res.diablo$weights), pos = 1, col = c(2, 4, 3, 6), 
+     cex = 0.8)
+
+
+plot(res.mcia$mcoa$cov2$cov21, res.mcia$mcoa$cov2$cov22, 
+     xlim = c(-0.02, max(max(res.mcia$mcoa$cov2$cov21)) + 0.1), 
+     ylim = c(-0.02, max(res.mcia$mcoa$cov2$cov22) + 0.05), 
+     col = c(2, 4, 3, 6), pch = 16,
+     xlab = "pseudoeig 1", ylab = "pseudoeig 2")
+grid()
+abline(v=0, lty = 2)
+abline(h=0, lty = 2)
+text(res.mcia$mcoa$cov2$cov21, res.mcia$mcoa$cov2$cov22, 
+     rownames(res.mcia$mcoa$cov2), pos = 1, col = c(2, 4, 3, 6), 
+     cex = 0.8)
+
+
+plot.MFA(res.mfa, choix = "group", axes = 1:2)
+
+fviz_contrib(res.mfa, "group", axes = 1)
+fviz_contrib(res.mfa, "group", axes = 2)
+```
+
+## Variables individuales
+
+```{r variables-individuales}
+plot(1, 1)
+legend("bottom", names(data.diablo), pch = 16,
+       inset = c(0, 1), xpd = TRUE, horiz = TRUE, bty = "n", 
+       col = c(3, 2, 6, 4))
+
+
+mixOmics::plotVar(res.diablo, comp = c(1, 2), var.names = TRUE, 
+                  legend = FALSE, col = c(3, 2, 6, 4, 1))
+
+
+par(mar = c(4, 4, 1, 1))
+plot(res.mcia$mcoa$Tco$SV1, res.mcia$mcoa$Tco$SV2, 
+     col = c(rep(3, nrow(data.mcia[[1]])), 
+             rep(2, nrow(data.mcia[[2]])),
+             rep(6, nrow(data.mcia[[3]])), 
+             rep(4, nrow(data.mcia[[4]]))), pch = 16,
+     xlab = paste0("Dim 1 (", round(eig.mcia[1, 2], 2), "%)"),
+     ylab = paste0("Dim 2 (", round(eig.mcia[2, 2], 2), "%)"),
+     xlim = c((min(res.mcia$mcoa$Tco$SV1) - 0.1), 
+              (max(res.mcia$mcoa$Tco$SV1) + 0.1)),
+     ylim = c((min(res.mcia$mcoa$Tco$SV2) - 0.1), 
+              (max(res.mcia$mcoa$Tco$SV2) + 0.1)))
+grid()
+abline(v = 0, lty = 2)
+abline(h = 0, lty = 2)
+text(res.mcia$mcoa$Tco$SV1, 
+     res.mcia$mcoa$Tco$SV2, 
+     rownames(res.mcia$mcoa$axis), 
+     pos = 1, cex = 0.5)
+
+
+fviz_mfa_var(res.mfa, "quanti.var", axes = c(1, 2), repel = TRUE,
+             geom = c("point", "text"), legend = "bottom")
+
+
+plotLoadings(res.diablo, comp = 1, contrib = "max")
+plotLoadings(res.diablo, comp = 2, contrib = "max")
+
+bk.mcia <- res.mcia$mcoa$Tco
+rownames(bk.mcia) <- gsub("\\.", "-", rownames(bk.mcia))
+bk.mcia$color <- 4
+bk.mcia$color[1:nrow(data.mcia[[1]])] <- 3
+bk.mcia$color[(nrow(data.mcia[[1]])+1):(nrow(data.mcia[[1]])+nrow(data.mcia[[2]]))] <- 2
+bk.mcia$color[(nrow(data.mcia[[1]])+nrow(data.mcia[[2]])+1):(nrow(data.mcia[[1]])+nrow(data.mcia[[2]])+nrow(data.mcia[[3]]))] <- 6
+par(mar = c(2.5, 10, 0.5, 1))
+bk.mcia <- bk.mcia[order(abs(bk.mcia$SV1), decreasing = T), ]
+barplot(bk.mcia$SV1[1:20], horiz = TRUE, 
+        col = bk.mcia$color[1:20],
+        names.arg = rownames(bk.mcia)[1:20], las = 1, cex.names = 0.9)
+bk.mcia <- bk.mcia[order(abs(bk.mcia$SV2), decreasing = T), ]
+barplot(bk.mcia$SV2[1:20], horiz = TRUE, 
+        col = bk.mcia$color[1:20],
+        names.arg = rownames(bk.mcia)[1:20], las = 1, cex.names = 0.9)
+
+fviz_contrib(res.mfa, choice = "quanti.var", axes = 1, top = 20)
+fviz_contrib(res.mfa, choice = "quanti.var", axes = 2, top = 20)
+```
+
+# Muestras
+
+```{r muestras}
+mycols <- c("red", "green", "blue", "magenta")
+names(mycols) <- levels(data.mfa$Soil)
+plot(1, 1)
+legend("bottom", levels(data.mfa$Soil), pch = 16,
+       inset = c(0, 1), xpd = TRUE, horiz = TRUE, bty = "n", 
+       col = mycols)
+
+plotIndiv(res.diablo, blocks = "consensus", comp = c(1, 2), 
+          ellipse = TRUE, legend = FALSE, col =  mycols[data.mfa$Soil])
+
+par(mar = c(4, 4, 1, 1))
+plot(res.mcia$mcoa$SynVar$SynVar1, res.mcia$mcoa$SynVar$SynVar2, 
+     col = mycols[data.mfa$Soil], pch = 16,
+     xlab = paste0("Dim 1 (", round(eig.mcia[1, 2], 2), "%)"),
+     ylab = paste0("Dim 2 (", round(eig.mcia[2, 2], 2), "%)"))
+grid()
+abline(v=0, lty = 2)
+abline(h=0, lty = 2)
+text(res.mcia$mcoa$SynVar$SynVar1, res.mcia$mcoa$SynVar$SynVar2,
+     rownames(data.mfa), col = mycols[data.mfa$Soil], pos = 1)
+
+
+plot.MFA(res.mfa, axes = c(1, 2), choix="ind", lab.ind = TRUE, 
+         habillage = "Soil")
+
+color1 <- abs(res.mfa$quali.var.sup$v.test[,1]) >= 1.96
+color2 <- abs(res.mfa$quali.var.sup$v.test[,2]) >= 1.96
+
+df <- data.frame(res.mfa$quali.var.sup$v.test)
+df <- round(df, 3)
+df %>% 
+  mutate(
+    class = row.names(.),
+    Dim1 = cell_spec(Dim.1, "html", background = ifelse(color1, "red", "")),
+    Dim2 = cell_spec(Dim.2, "html", background = ifelse(color2, "red", ""))
+  ) %>% 
+  select(class, Dim1, Dim2) %>%
+  kable(format = "html", escape = F) %>%
+  kable_styling("striped", full_width = F)
+```
+
+
+# Session information
+
+```{r session}
+Sys.time()-startpoint
+devtools::session_info()
+```

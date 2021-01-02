@@ -1,0 +1,52 @@
+---
+title: "omicade4: MCIA"
+author: "Mar Garcia-Aloy"
+output: 
+  html_document:
+    toc: true
+    number_sections: false
+    toc_float: true
+---
+
+```{r startpoint, include = FALSE}
+startpoint <- Sys.time()
+```
+
+# Preliminares
+
+```{r preliminares}
+library(omicade4)
+```
+
+# Preparación de los datos
+
+```{r datos}
+data(NCI60_4arrays)
+```
+
+# Ejecución del modelo
+
+```{r modelo}
+res.mcia <- mcia(NCI60_4arrays, cia.nf = 10)
+```
+
+# Representaciones gráficas
+
+```{r graficos}
+cancer_type <- colnames(NCI60_4arrays$agilent)
+cancer_type <- sapply(strsplit(cancer_type, split="\\."), 
+                      function(x) x[1])
+
+plot.mcia(res.mcia, axes = 1:2, phenovec = cancer_type, 
+          sample.lab = FALSE)
+
+selectVar(res.mcia, a1.lim = c(2, Inf), a2.lim = c(-Inf, Inf))
+plotVar(res.mcia, var = c("S100B", "S100A1"), var.lab = TRUE)
+```
+
+# Session information
+
+```{r session}
+Sys.time()-startpoint
+devtools::session_info()
+```

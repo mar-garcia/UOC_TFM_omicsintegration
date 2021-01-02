@@ -1,0 +1,621 @@
+---
+title: "NCI60"
+author: "Mar Garcia-Aloy"
+output: 
+  html_document:
+    toc: true
+    number_sections: false
+    toc_float: true
+---
+
+```{r startpoint, include = FALSE}
+startpoint <- Sys.time()
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+```
+
+# Paquetes necesarios
+
+```{r libraries}
+library(mixOmics)
+library(omicade4)
+library(FactoMineR)
+library(factoextra)
+library(dplyr)
+library(kableExtra)
+library(VennDiagram)
+```
+
+
+# Descripción del estudio
+
+Los datos se encuentran en el objeto `NCI60_4arrays`, que es una lista que contiene los datos de microarrays del NCI-60 con unos pocos cientos de genes seleccionados al azar.  
+Cada elemento de la lista es un “data.frame” con los datos de cada una de las plataformas, donde los genes se ordenan en filas y las muestras (tejidos tumorales) en columnas.
+
+```{r datos}
+data("NCI60_4arrays")
+summary(NCI60_4arrays)
+sapply(NCI60_4arrays, dim)
+```
+
+A continuación se va a inspeccionar, mediante un diagrama de Venn, cual es la coincidencia de los genes incluidos en cada uno de los conjuntos de datos.
+
+```{r replicas-plataformas}
+agilent <- data.frame(gens = row.names(NCI60_4arrays[[1]]))
+agilent$agilent <- 1
+
+hgu133 <- data.frame(gens = row.names(NCI60_4arrays[[2]]))
+hgu133$hgu133 <- 1
+
+hgu133p2 <- data.frame(gens = row.names(NCI60_4arrays[[3]]))
+hgu133p2$hgu133p2 <- 1
+
+hgu95 <- data.frame(gens = row.names(NCI60_4arrays[[4]]))
+hgu95$hgu95 <- 1
+
+data <- merge(agilent, hgu133, by = "gens", all = TRUE)
+data <- merge(data, hgu133p2, by = "gens", all = TRUE)
+data <- merge(data, hgu95, by = "gens", all = TRUE)
+rm(agilent, hgu133, hgu133p2, hgu95)
+data[is.na(data)] <- 0
+grid.newpage()
+draw.quad.venn(
+  area1 = sum(data$agilent == 1), 
+  area2 = sum(data$hgu133 == 1), 
+  area3 = sum(data$hgu133p2 == 1), 
+  area4 = sum(data$hgu95 == 1), 
+  n12 = sum(data$agilent == 1 & data$hgu133 == 1), 
+  n13 = sum(data$agilent == 1 & data$hgu133p2 == 1), 
+  n14 = sum(data$agilent == 1 & data$hgu95 == 1), 
+  n23 = sum(data$hgu133 == 1 & data$hgu133p2 == 1), 
+  n24 = sum(data$hgu133 == 1 & data$hgu95 == 1),
+  n34 = sum(data$hgu133p2 == 1 & data$hgu95 == 1), 
+  n123 = sum(data$agilent == 1 & data$hgu133 == 1 & data$hgu133p2 == 1), 
+  n124 = sum(data$agilent == 1 & data$hgu133 == 1 & data$hgu95 == 1), 
+  n134 = sum(data$agilent == 1 & data$hgu133p2 == 1 & data$hgu95 == 1), 
+  n234 = sum(data$hgu133 == 1 & data$hgu133p2 == 1 & data$hgu95 == 1),
+  n1234 = sum(data$agilent == 1 & data$hgu133 == 1 & data$hgu133p2 == 1 & data$hgu95 == 1),
+  category = c("Agilent", "Hgu 133", "Hgu 133 p2", "Hgu 95"),
+  fill = c("#DF536B", "#61D04F", "#2297E6", "#F5C710")
+)
+
+data$total <- rowSums(data[,-1])
+```
+
+Tal y como se puede observar en el diagrama de Venn, no hay ningún gen común para las 4 plataformas, pero si que hay algunos genes medidos en almenos 2 plataformas. Por ejemplo, hay un total de 16 genes medidos en las plataformas “Hgu 133 p2” y “Hgu 95”, y 13 genes medidos con las plataformas “Agilent” y “Hgu 133”, entre otros.
+
+# Preparación de los datos
+
+```{r tipo-cancer}
+cancer_type <- colnames(NCI60_4arrays$agilent)
+cancer_type <- factor(sapply(strsplit(cancer_type, split="\\."), 
+                             function(x) x[1]))
+```
+
+
+Para aplicar el algoritmo `DIABLO`, los datos deben estar en una lista compuesta por distintos “data.frames”, un por cada bloque de datos. Las muestras se deben situar en las filas y las variables en las columnas.
+
+```{r datos-formato}
+data.diablo <- list(
+  agilent = t(NCI60_4arrays$agilent),
+  hgu133 = t(NCI60_4arrays$hgu133),
+  hgu133p2 = t(NCI60_4arrays$hgu133p2),
+  hgu95 = t(NCI60_4arrays$hgu95)
+)
+data.diablo$agilent[1:5, 1:5]
+data.diablo$hgu133[1:5, 1:5]
+data.diablo$hgu133p2[1:5, 1:5]
+data.diablo$hgu95[1:5, 1:5]
+
+data.mcia <- NCI60_4arrays
+all(apply((x <- sapply(data.mcia, colnames))[,-1], 2, function(y)
+  identical(y, x[,1])))
+rm(x)
+
+data.mfa <- data.frame(t(do.call("rbind", NCI60_4arrays)))
+data.mfa$cancer_type <- factor(cancer_type)
+```
+
+
+# Ejecución del modelo
+
+```{r modelos}
+res.diablo <- block.splsda(
+  X = data.diablo, 
+  Y = cancer_type, 
+  keepX = list(agilent =  c(51, 34, 23, 7), 
+               hgu133 =   c(39, 33, 14, 6), 
+               hgu133p2 = c(66, 21, 18, 3),
+               hgu95 =    c(61, 57, 34, 5)), 
+  ncomp = 4, scale = TRUE, mode = "regression")
+
+res.mcia <- mcia(data.mcia, cia.nf = 4)
+
+res.mfa <- MFA(data.mfa, 
+               group = c(nrow(NCI60_4arrays[[1]]), 
+                         nrow(NCI60_4arrays[[2]]), 
+                         nrow(NCI60_4arrays[[3]]), 
+                         nrow(NCI60_4arrays[[4]]), 1), 
+               type = c(rep("s", 4), "n"),
+               ncp = 4,
+               name.group = c(names(NCI60_4arrays), "type"),
+               num.group.sup = c(5),
+               graph = FALSE)
+```
+
+# Valores propios y varianza explicada
+
+```{r varianza}
+eig.mcia <- data.frame(
+  eigenvalue = round(res.mcia$mcoa$pseudoeig, 3),
+  "percentage of variance" = round(res.mcia$mcoa$pseudoeig / 
+    sum(res.mcia$mcoa$pseudoeig)*100, 1),
+  "cumulative percentage of variance" = NA)
+for(i in 1:nrow(eig.mcia)){
+  eig.mcia[i,3] <- round(sum(eig.mcia[1:i, 2]), 1)
+}
+rownames(eig.mcia) <- paste("comp", seq(nrow(eig.mcia)))
+eig.mcia[1:5,] %>%
+  kbl() %>%
+  kable_minimal()
+
+
+eig.mfa <- res.mfa$eig
+eig.mfa[, 1] <- round(eig.mfa[, 1], 3)
+eig.mfa[, 2] <- round(eig.mfa[, 2], 1)
+eig.mfa[, 3] <- round(eig.mfa[, 3], 1)
+eig.mfa[1:5,] %>%
+  kbl() %>%
+  kable_minimal()
+
+par(mar = c(4, 4, 1, 0))
+barplot(eig.mcia[1:10, 2], names.arg = seq(10), las = 1, 
+        xlab = "Dimension", ylab = "% of explained variance")
+
+fviz_screeplot(res.mfa)
+```
+
+
+# Muestras
+
+```{r muestras}
+mycols <- c("red", "green", "blue", "magenta", "brown", "gray", "orange", "cyan", "pink")
+plot(1, 1)
+legend("bottom", levels(cancer_type), pch = 16,
+       inset = c(0, 1), xpd = TRUE, horiz = TRUE, bty = "n", 
+       col = mycols)
+
+plotIndiv(res.diablo, blocks = "consensus", comp = c(1, 2), 
+          ellipse = TRUE, legend = FALSE, col =  mycols)
+plotIndiv(res.diablo, blocks = "consensus", comp = c(3, 4), 
+          ellipse = TRUE, legend = FALSE, col = mycols)
+
+
+par(mar = c(4, 4, 1, 1))
+plot(res.mcia$mcoa$SynVar$SynVar1, res.mcia$mcoa$SynVar$SynVar2, 
+     col = mycols[cancer_type], pch = 16,
+     xlab = paste0("Dim 1 (", round(eig.mcia[1, 2], 2), "%)"),
+     ylab = paste0("Dim 2 (", round(eig.mcia[2, 2], 2), "%)"))
+grid()
+abline(v=0, lty = 2)
+abline(h=0, lty = 2)
+
+plot(res.mcia$mcoa$SynVar$SynVar3, res.mcia$mcoa$SynVar$SynVar4, 
+     col = mycols[cancer_type], pch = 16,
+     xlab = paste0("Dim 3 (", round(eig.mcia[3, 2], 2), "%)"),
+     ylab = paste0("Dim 4 (", round(eig.mcia[4, 2], 2), "%)"))
+grid()
+abline(v=0, lty = 2)
+abline(h=0, lty = 2)
+
+plot.MFA(res.mfa, axes = c(1, 2), choix="ind", lab.ind = FALSE, 
+         habillage = "cancer_type")
+plot.MFA(res.mfa, axes = c(3, 4), choix="ind", lab.ind = FALSE, 
+         habillage = "cancer_type")
+```
+
+
+# Variables
+
+## Variables agrupadas
+
+```{r variables-agrupadas}
+par(mar = c(4, 4, 1, 1))
+plot(res.diablo$weights$comp1, res.diablo$weights$comp2,
+     xlim = c(0, 1), ylim = c(0, 1), col = 2:5, pch = 16,
+     xlab = "Dim 1", ylab = "Dim 2")
+grid()
+abline(v=0, lty = 2)
+abline(h=0, lty = 2)
+text(res.diablo$weights$comp1, res.diablo$weights$comp2, 
+     rownames(res.diablo$weights), pos = 1, col = 2:5, cex = 0.8)
+
+plot(res.diablo$weights$comp3, res.diablo$weights$comp4,
+     xlim = c(0, 1), ylim = c(0, 1), col = 2:5, pch = 16,
+     xlab = "Dim 3", ylab = "Dim 4")
+grid()
+abline(v=0, lty = 2)
+abline(h=0, lty = 2)
+text(res.diablo$weights$comp3, res.diablo$weights$comp4, 
+     rownames(res.diablo$weights), pos = 1, col = 2:5, cex = 0.8)
+
+
+plot(res.mcia$mcoa$cov2$cov21, res.mcia$mcoa$cov2$cov22, 
+     xlim = c(0,max(max(res.mcia$mcoa$cov2$cov21)) + 0.1), 
+     ylim = c(0,max(res.mcia$mcoa$cov2$cov22) + 0.05), 
+     col = 2:5, pch = 16,
+     xlab = "pseudoeig 1", ylab = "pseudoeig 2")
+grid()
+abline(v=0, lty = 2)
+abline(h=0, lty = 2)
+text(res.mcia$mcoa$cov2$cov21, res.mcia$mcoa$cov2$cov22, 
+     rownames(res.mcia$mcoa$cov2), pos = 1, col = 2:5, cex = 0.8)
+
+plot(res.mcia$mcoa$cov2$cov23, res.mcia$mcoa$cov2$cov24, 
+     xlim = c(0,max(max(res.mcia$mcoa$cov2$cov23)) + 0.02), 
+     ylim = c(0,max(res.mcia$mcoa$cov2$cov24) + 0.02), 
+     col = 2:5, pch = 16,
+     xlab = "pseudoeig 3", ylab = "pseudoeig 4")
+grid()
+abline(v = 0, lty = 2)
+abline(h = 0, lty = 2)
+text(res.mcia$mcoa$cov2$cov23, res.mcia$mcoa$cov2$cov24, 
+     rownames(res.mcia$mcoa$cov2), pos = 1, col = 2:5, cex = 0.8)
+
+
+plot.MFA(res.mfa, choix = "group", axes = 1:2)
+plot.MFA(res.mfa, choix = "group", axes = 3:4)
+
+fviz_contrib(res.mfa, "group", axes = 1)
+fviz_contrib(res.mfa, "group", axes = 2)
+fviz_contrib(res.mfa, "group", axes = 3)
+fviz_contrib(res.mfa, "group", axes = 4)
+```
+
+
+## Variables individuales
+
+```{r variables-individuales}
+plot(1, 1)
+legend("bottom", names(NCI60_4arrays), pch = 16,
+       inset = c(0, 1), xpd = TRUE, horiz = TRUE, bty = "n", 
+       col = c(2, 3, 4, 6))
+
+
+mixOmics::plotVar(res.diablo, comp = c(1, 2), 
+                  var.names = TRUE, cex = rep(2, 4), 
+                  legend = FALSE, col = c(2, 3, 4, 6))
+
+mixOmics::plotVar(res.diablo, comp = c(3, 4), 
+                  var.names = TRUE, cex = rep(2, 4), 
+                  legend = FALSE, col = c(2, 3, 4, 6))
+
+
+par(mar = c(4, 4, 1, 1))
+idx <- abs(res.mcia$mcoa$Tco$SV1) > 1.5 | abs(res.mcia$mcoa$Tco$SV2) > 1.5
+plot(res.mcia$mcoa$Tco$SV1, res.mcia$mcoa$Tco$SV2, 
+     col = c(rep(2, nrow(data.mcia[[1]])), 
+             rep(3, nrow(data.mcia[[2]])),
+             rep(4, nrow(data.mcia[[3]])), 
+             rep(6, nrow(data.mcia[[4]]))), pch = 16,
+     xlab = paste0("Dim 1 (", round(eig.mcia[1, 2], 2), "%)"),
+     ylab = paste0("Dim 2 (", round(eig.mcia[2, 2], 2), "%)"),
+     xlim = c((min(res.mcia$mcoa$Tco$SV1) - 0.1), 
+              (max(res.mcia$mcoa$Tco$SV1) + 0.1)),
+     ylim = c((min(res.mcia$mcoa$Tco$SV2) - 0.1), 
+              (max(res.mcia$mcoa$Tco$SV2) + 0.1)))
+grid()
+abline(v = 0, lty = 2)
+abline(h = 0, lty = 2)
+text(res.mcia$mcoa$Tco$SV1[idx], 
+     res.mcia$mcoa$Tco$SV2[idx], 
+     rownames(res.mcia$mcoa$axis)[idx], 
+     pos = 1, cex = 0.5)
+
+idx <- abs(res.mcia$mcoa$Tco$SV3) > 1.3 | abs(res.mcia$mcoa$Tco$SV4) > 1.3
+plot(res.mcia$mcoa$Tco$SV3, res.mcia$mcoa$Tco$SV4, 
+     col = c(rep(2, nrow(data.mcia[[1]])), 
+             rep(3, nrow(data.mcia[[2]])),
+             rep(4, nrow(data.mcia[[3]])), 
+             rep(6, nrow(data.mcia[[4]]))), pch = 16,
+     xlab = paste0("Dim 3 (", round(eig.mcia[3, 2], 2), "%)"),
+     ylab = paste0("Dim 4 (", round(eig.mcia[4, 2], 2), "%)"),
+     xlim = c((min(res.mcia$mcoa$Tco$SV3) - 0.1), 
+              (max(res.mcia$mcoa$Tco$SV3) + 0.1)),
+     ylim = c((min(res.mcia$mcoa$Tco$SV4) - 0.1), 
+              (max(res.mcia$mcoa$Tco$SV4) + 0.1)))
+grid()
+abline(v = 0, lty = 2)
+abline(h = 0, lty = 2)
+text(res.mcia$mcoa$Tco$SV3[idx], 
+     res.mcia$mcoa$Tco$SV4[idx], 
+     rownames(res.mcia$mcoa$axis)[idx], 
+     pos = 1, cex = 0.5)
+
+
+fviz_mfa_var(res.mfa, "quanti.var", axes = c(1, 2), repel = TRUE,
+             geom = "point", legend = "bottom")
+fviz_mfa_var(res.mfa, "quanti.var", axes = c(3, 4), repel = TRUE,
+             geom = "point", legend = "bottom")
+```
+
+### Leucemia (LE)
+
+```{r leucemia}
+plotIndiv(res.diablo, blocks = "consensus", comp = c(1, 2), 
+          ellipse = TRUE, legend = FALSE, col =  mycols)
+plot(res.mcia$mcoa$SynVar$SynVar2, res.mcia$mcoa$SynVar$SynVar3, 
+     col = mycols[cancer_type], pch = 16,
+     xlab = paste0("Dim 2 (", round(eig.mcia[2, 2], 2), "%)"),
+     ylab = paste0("Dim 3 (", round(eig.mcia[3, 2], 2), "%)"))
+grid()
+abline(v=0, lty = 2)
+abline(h=0, lty = 2)
+plot.MFA(res.mfa, axes = c(1, 3), choix="ind", lab.ind = FALSE, 
+         habillage = "cancer_type")
+
+
+plotLoadings(res.diablo, comp = 1, contrib = "max", legend.color = mycols)
+plotLoadings(res.diablo, comp = 1, contrib = "min", legend.color = mycols)
+
+idx <- res.mcia$mcoa$Tco$SV2 < (-1) & res.mcia$mcoa$Tco$SV3 > 1
+plot(res.mcia$mcoa$Tco$SV2, res.mcia$mcoa$Tco$SV3, 
+     col = c(rep(2, nrow(data.mcia[[1]])), 
+             rep(3, nrow(data.mcia[[2]])),
+             rep(4, nrow(data.mcia[[3]])), 
+             rep(6, nrow(data.mcia[[4]]))), pch = 16,
+     xlab = paste0("Dim 2 (", round(eig.mcia[2, 2], 2), "%)"),
+     ylab = paste0("Dim 3 (", round(eig.mcia[3, 2], 2), "%)"),
+     xlim = c((min(res.mcia$mcoa$Tco$SV2) - 0.1), 
+              (max(res.mcia$mcoa$Tco$SV2) + 0.1)),
+     ylim = c((min(res.mcia$mcoa$Tco$SV3) - 0.1), 
+              (max(res.mcia$mcoa$Tco$SV3) + 0.1)))
+grid()
+abline(v = 0, lty = 2)
+abline(h = 0, lty = 2)
+text(res.mcia$mcoa$Tco$SV2[idx], 
+     res.mcia$mcoa$Tco$SV3[idx], 
+     rownames(res.mcia$mcoa$axis)[idx], 
+     pos = 1, cex = 0.5)
+legend("bottom", names(NCI60_4arrays), pch = 16,
+       inset = c(0, 1), xpd = TRUE, horiz = TRUE, bty = "n", 
+       col = c(2, 3, 4, 6))
+
+fviz_mfa_var(res.mfa, "quanti.var", axes = c(1, 3), repel = TRUE,
+             geom = "text", legend = "bottom", 
+             select.var = list(contrib = 20))
+
+
+bk.diablo <- data.frame(
+  variable = c(paste("agilent", names(which(res.diablo$loadings$agilent[,1] > 0)), sep = "-"),
+               paste("hgu133", names(which(res.diablo$loadings$hgu133[,1] > 0)), sep = "-"),
+               paste("hgu133p2", names(which(res.diablo$loadings$hgu133p2[,1] > 0)), sep = "-"),
+               paste("hgu95", names(which(res.diablo$loadings$hgu95[,1] > 0))), sep = "-"),
+  diablo = 1)
+bk.diablo <- bk.diablo[bk.diablo$variable != "-", ]
+bk.diablo$variable <- gsub(" ", "-", bk.diablo$variable)
+
+bk.mcia <- res.mcia$mcoa$Tco
+rownames(bk.mcia)[grep("agilent", rownames(bk.mcia))] <- paste("agilent", rownames(bk.mcia)[grep("agilent", rownames(bk.mcia))], sep = "-")
+rownames(bk.mcia)[grep("hgu133$", rownames(bk.mcia))] <- paste("hgu133", rownames(bk.mcia)[grep("hgu133$", rownames(bk.mcia))], sep = "-")
+rownames(bk.mcia)[grep("hgu133p2", rownames(bk.mcia))] <- paste("hgu133p2", rownames(bk.mcia)[grep("hgu133p2", rownames(bk.mcia))], sep = "-")
+rownames(bk.mcia)[grep("hgu95", rownames(bk.mcia))] <- paste("hgu95", rownames(bk.mcia)[grep("hgu95", rownames(bk.mcia))], sep = "-")
+rownames(bk.mcia) <- gsub("\\..*", "", rownames(bk.mcia))
+bk.mcia$select <- FALSE
+bk.mcia$select[bk.mcia$SV2 < (-0.2) & bk.mcia$SV3 > 0.2] <- TRUE
+bk.mcia <- bk.mcia[bk.mcia$select, ]
+bk.mcia <- data.frame(variable = rownames(bk.mcia), mcia = 1)
+bk.mcia$variable <- gsub("\\..*", "", bk.mcia$variable)
+
+bk.mfa1 <- facto_summarize(res.mfa, element = "quanti.var", result = c("coord", "contrib"), axes = 1)
+bk.mfa3 <- facto_summarize(res.mfa, element = "quanti.var", result = c("coord", "contrib"), axes = 3)
+colnames(bk.mfa1)[3:4] <- paste(colnames(bk.mfa1)[3:4], "1", sep = "_")
+colnames(bk.mfa3)[3:4] <- paste(colnames(bk.mfa3)[3:4], "3", sep = "_")
+bk.mfa <- merge(bk.mfa1, bk.mfa3, by = "name")
+bk.mfa$select <- FALSE
+bk.mfa$select[bk.mfa$Dim.1 < 0 & bk.mfa$Dim.3 < 0 & 
+                bk.mfa$contrib_1 > 0.05 & bk.mfa$contrib_3 > 0.05] <- TRUE
+bk.mfa <- bk.mfa[bk.mfa$select, ]
+colnames(bk.mfa)[1] <- "variable"
+bk.mfa$mfa <- 1
+bk.mfa <- bk.mfa[, c("variable", "mfa")]
+bk.mfa$variable <- gsub("\\.", "-", bk.mfa$variable)
+
+bk <- merge(bk.diablo, bk.mcia, by = "variable", all = TRUE)
+bk <- merge(bk, bk.mfa, by = "variable", all = TRUE)
+bk[is.na(bk)] <- 0
+
+grid.newpage()
+draw.triple.venn(area1 = sum(bk$diablo == 1), 
+                 area2 = sum(bk$mcia == 1), 
+                 area3 = sum(bk$mfa == 1),
+                 n12 = sum(bk$diablo == 1 & bk$mcia == 1),
+                 n23 = sum(bk$mcia == 1 & bk$mfa == 1),
+                 n13 = sum(bk$diablo == 1 & bk$mfa == 1), 
+                 n123 = sum(bk$diablo == 1 & bk$mcia == 1 & bk$mfa == 1),
+                 category = c("DIABLO", "MCIA", "MFA"))
+```
+
+
+Entre todos los genes asociados de forma directa con la línea celular "LE" por al menos uno de los tres modelos generados, el `r round((sum(bk$diablo == 1 & bk$mcia == 1 & bk$mfa == 1)*100)/nrow(bk))`% (n=`r sum(bk$diablo == 1 & bk$mcia == 1 & bk$mfa == 1)`) coincidieron entre todos ellos.    
+Por otro lado, un total de n=`r (sum(bk$diablo == 1 & bk$mcia == 0 & bk$mfa == 0) + sum(bk$diablo == 0 & bk$mcia == 1 & bk$mfa == 0) + sum(bk$diablo == 0 & bk$mcia == 0 & bk$mfa == 1))` (`r round(((sum(bk$diablo == 1 & bk$mcia == 0 & bk$mfa == 0) + sum(bk$diablo == 0 & bk$mcia == 1 & bk$mfa == 0) + sum(bk$diablo == 0 & bk$mcia == 0 & bk$mfa == 1))*100)/nrow(bk))`%) solamente fueron seleccionados para 1 único modelo, siendo el "MFA" aquel con un mayor número de genes discriminantes coincidentes con al menos uno de los otros dos algoritmos (únicamente n=`r sum(bk$diablo == 0 & bk$mcia == 0 & bk$mfa == 1)`, `r round((sum(bk$diablo == 0 & bk$mcia == 0 & bk$mfa == 1)*100)/nrow(bk.mfa))`% genes fueron seleccionados sólo per el modelo "MFA").    
+  
+
+```{r leucemia-replicas-1}
+bk$platform <- gsub("-.*", "", bk$variable)
+bk$gen <- NA
+for(i in 1:nrow(bk)){
+  bk$gen[i] <- substr(bk$variable[i], nchar(bk$platform[i])+2, 100)
+}
+data.rep <- data[data$total > 1, ]
+data.rep$platforms <- c()
+for(i in 1:nrow(data.rep)){
+  data.rep$platforms[i] <- paste(colnames(data.rep)[which(data.rep[i,2:5] > 0)+1], collapse = ", ")
+}
+```
+
+Un total de `r sum(data.rep$gens %in% bk$gen)` genes fueron medidos con >1 plataforma: `r data.rep$gens[data.rep$gens %in% bk$gen]`.
+
+```{r leucemia-replicas-2}
+gens.rep <- data.rep$gens[data.rep$gens %in% bk$gen]
+gens.rep.ok <- c()
+gens.rep.mis <- c()
+for(i in 1:length(gens.rep)){
+  if(data.rep$total[data.rep$gens == gens.rep[i]] == sum(bk$gen == gens.rep[i])){
+    gens.rep.ok <- c(gens.rep.ok, gens.rep[i])
+  } else {
+    gens.rep.mis <- c(gens.rep.mis, gens.rep[i])
+  }
+}
+
+bk.rep <- bk[bk$gen %in% gens.rep, c("gen", "platform", "diablo", "mcia", "mfa")]
+bk.rep <- bk.rep[order(bk.rep$gen, bk.rep$platform), ]
+data.rep2 <- data.rep[,c("gens", "platforms")]
+colnames(data.rep2)[1] <- "gen"
+bk.rep <- merge(bk.rep, data.rep2, by = "gen")
+bk.rep %>%
+  kbl() %>%
+  kable_minimal()
+```
+
+### Melanoma (ME)
+
+```{r melanomas}
+plotIndiv(res.diablo, blocks = "consensus", comp = c(1, 2), 
+          ellipse = TRUE, legend = FALSE, col =  mycols)
+
+par(mar = c(4, 4, 1, 1))
+plot(res.mcia$mcoa$SynVar$SynVar1, res.mcia$mcoa$SynVar$SynVar2, 
+     col = mycols[cancer_type], pch = 16,
+     xlab = paste0("Dim 1 (", round(eig.mcia[1, 2], 2), "%)"),
+     ylab = paste0("Dim 2 (", round(eig.mcia[2, 2], 2), "%)"))
+grid()
+abline(v=0, lty = 2)
+abline(h=0, lty = 2)
+
+plot.MFA(res.mfa, axes = c(1, 2), choix="ind", lab.ind = FALSE, 
+         habillage = "cancer_type")
+
+
+
+plotLoadings(res.diablo, comp = 2, contrib = "max", legend.color = mycols)
+plotLoadings(res.diablo, comp = 2, contrib = "min", legend.color = mycols)
+
+par(mar = c(4, 4, 2, 1))
+idx <- res.mcia$mcoa$Tco$SV1 > 2
+plot(res.mcia$mcoa$Tco$SV1, res.mcia$mcoa$Tco$SV2, 
+     col = c(rep(2, nrow(data.mcia[[1]])), 
+             rep(3, nrow(data.mcia[[2]])),
+             rep(4, nrow(data.mcia[[3]])), 
+             rep(6, nrow(data.mcia[[4]]))), pch = 16,
+     xlab = paste0("Dim 1 (", round(eig.mcia[1, 2], 2), "%)"),
+     ylab = paste0("Dim 2 (", round(eig.mcia[2, 2], 2), "%)"),
+     xlim = c((min(res.mcia$mcoa$Tco$SV1) - 0.1), 
+              (max(res.mcia$mcoa$Tco$SV1) + 0.1)),
+     ylim = c((min(res.mcia$mcoa$Tco$SV2) - 0.1), 
+              (max(res.mcia$mcoa$Tco$SV2) + 0.1)))
+grid()
+abline(v = 0, lty = 2)
+abline(h = 0, lty = 2)
+text(res.mcia$mcoa$Tco$SV1[idx], 
+     res.mcia$mcoa$Tco$SV2[idx], 
+     rownames(res.mcia$mcoa$axis)[idx], 
+     pos = 1, cex = 0.5)
+legend("bottom", names(NCI60_4arrays), pch = 16,
+       inset = c(0, 1), xpd = TRUE, horiz = TRUE, bty = "n", 
+       col = c(2, 3, 4, 6))
+
+fviz_mfa_var(res.mfa, "quanti.var", axes = c(1, 2), repel = TRUE,
+             geom = "text", legend = "bottom", 
+             select.var = list(contrib = 20))
+fviz_contrib(res.mfa, choice = "quanti.var", axes = 2, top = 20)
+
+
+bk.diablo <- data.frame(
+  variable = c(paste("agilent", names(which(res.diablo$loadings$agilent[,2] < 0)), sep = "-"),
+               paste("hgu133", names(which(res.diablo$loadings$hgu133[,2] < 0)), sep = "-"),
+               paste("hgu133p2", names(which(res.diablo$loadings$hgu133p2[,2] < 0)), sep = "-"),
+               paste("hgu95", names(which(res.diablo$loadings$hgu95[,2] < 0))), sep = "-"),
+  diablo = 1)
+bk.diablo <- bk.diablo[bk.diablo$variable != "-", ]
+bk.diablo$variable <- gsub(" ", "-", bk.diablo$variable)
+
+bk.mcia <- res.mcia$mcoa$Tco
+rownames(bk.mcia)[grep("agilent", rownames(bk.mcia))] <- paste("agilent", rownames(bk.mcia)[grep("agilent", rownames(bk.mcia))], sep = "-")
+rownames(bk.mcia)[grep("hgu133$", rownames(bk.mcia))] <- paste("hgu133", rownames(bk.mcia)[grep("hgu133$", rownames(bk.mcia))], sep = "-")
+rownames(bk.mcia)[grep("hgu133p2", rownames(bk.mcia))] <- paste("hgu133p2", rownames(bk.mcia)[grep("hgu133p2", rownames(bk.mcia))], sep = "-")
+rownames(bk.mcia)[grep("hgu95", rownames(bk.mcia))] <- paste("hgu95", rownames(bk.mcia)[grep("hgu95", rownames(bk.mcia))], sep = "-")
+rownames(bk.mcia) <- gsub("\\..*", "", rownames(bk.mcia))
+bk.mcia <- bk.mcia[bk.mcia$SV1 > 0, ]
+bk.mcia <- bk.mcia[order(bk.mcia$SV1, decreasing = T), ]
+bk.mcia <- bk.mcia[1:nrow(bk.diablo), ]
+bk.mcia <- data.frame(variable = rownames(bk.mcia), mcia = 1)
+bk.mcia$variable <- gsub("\\..*", "", bk.mcia$variable)
+
+bk.mfa <- facto_summarize(res.mfa, element = "quanti.var", result = c("coord", "contrib"), axes = 2)
+bk.mfa <- bk.mfa[bk.mfa$Dim.2 < 0, ]
+bk.mfa <- bk.mfa[order(bk.mfa$contrib, decreasing = T), ]
+bk.mfa <- bk.mfa[1:nrow(bk.diablo), ]
+colnames(bk.mfa)[1] <- "variable"
+bk.mfa$mfa <- 1
+bk.mfa <- bk.mfa[, c("variable", "mfa")]
+bk.mfa$variable <- gsub("\\.", "-", bk.mfa$variable)
+
+bk <- merge(bk.diablo, bk.mcia, by = "variable", all = TRUE)
+bk <- merge(bk, bk.mfa, by = "variable", all = TRUE)
+bk[is.na(bk)] <- 0
+
+grid.newpage()
+draw.triple.venn(area1 = sum(bk$diablo == 1), 
+                 area2 = sum(bk$mcia == 1), 
+                 area3 = sum(bk$mfa == 1),
+                 n12 = sum(bk$diablo == 1 & bk$mcia == 1),
+                 n23 = sum(bk$mcia == 1 & bk$mfa == 1),
+                 n13 = sum(bk$diablo == 1 & bk$mfa == 1), 
+                 n123 = sum(bk$diablo == 1 & bk$mcia == 1 & bk$mfa == 1),
+                 category = c("DIABLO", "MCIA", "MFA"))
+```
+
+Entre todos los genes asociados de forma directa con la línea celular "ME" por al menos uno de los tres modelos generados, el `r round((sum(bk$diablo == 1 & bk$mcia == 1 & bk$mfa == 1)*100)/nrow(bk))`% (n=`r sum(bk$diablo == 1 & bk$mcia == 1 & bk$mfa == 1)`) coincidieron entre todos ellos.    
+Por otro lado, un total de n=`r (sum(bk$diablo == 1 & bk$mcia == 0 & bk$mfa == 0) + sum(bk$diablo == 0 & bk$mcia == 1 & bk$mfa == 0) + sum(bk$diablo == 0 & bk$mcia == 0 & bk$mfa == 1))` (`r round(((sum(bk$diablo == 1 & bk$mcia == 0 & bk$mfa == 0) + sum(bk$diablo == 0 & bk$mcia == 1 & bk$mfa == 0) + sum(bk$diablo == 0 & bk$mcia == 0 & bk$mfa == 1))*100)/nrow(bk))`%) solamente fueron seleccionados por 1 único modelo, siendo el "MCIA" aquel con un mayor número de genes discriminantes no coincidentes con ninguno de los otros dos algoritmos (n=`r sum(bk$diablo == 0 & bk$mcia == 1 & bk$mfa == 0)`, `r round((sum(bk$diablo == 0 & bk$mcia == 1 & bk$mfa == 0)*100)/nrow(bk.mcia))`%). Así pues, parece que hay un mayor grado de homogeneidad entre los modelos generados por los algoritmos “DIABLO” y “MFA”.
+
+```{r melanomas-replicas}
+bk$platform <- gsub("-.*", "", bk$variable)
+bk$gen <- NA
+for(i in 1:nrow(bk)){
+  bk$gen[i] <- substr(bk$variable[i], nchar(bk$platform[i])+2, 100)
+}
+data.rep <- data[data$total > 1, ]
+data.rep$platforms <- c()
+for(i in 1:nrow(data.rep)){
+  data.rep$platforms[i] <- paste(colnames(data.rep)[which(data.rep[i,2:5] > 0)+1], collapse = ", ")
+}
+
+gens.rep <- data.rep$gens[data.rep$gens %in% bk$gen]
+gens.rep.ok <- c()
+gens.rep.mis <- c()
+for(i in 1:length(gens.rep)){
+  if(data.rep$total[data.rep$gens == gens.rep[i]] == sum(bk$gen == gens.rep[i])){
+    gens.rep.ok <- c(gens.rep.ok, gens.rep[i])
+  } else {
+    gens.rep.mis <- c(gens.rep.mis, gens.rep[i])
+  }
+}
+
+bk.rep <- bk[bk$gen %in% gens.rep, c("gen", "platform", "diablo", "mcia", "mfa")]
+bk.rep <- bk.rep[order(bk.rep$gen, bk.rep$platform), ]
+data.rep2 <- data.rep[,c("gens", "platforms")]
+colnames(data.rep2)[1] <- "gen"
+bk.rep <- merge(bk.rep, data.rep2, by = "gen")
+bk.rep %>%
+  kbl() %>%
+  kable_minimal()
+```
+
+
+# Session information
+
+```{r session}
+Sys.time()-startpoint
+devtools::session_info()
+```
